@@ -2,6 +2,11 @@ plugins {
     id 'com.android.application'
 }
 
+// Computed outside the android block: a ternary inside it is easy for Groovy to
+// mis-parse, and these values must be plain values for the DSL.
+def buildVersionCode = (System.getenv("VERSION_CODE") ?: "1").toInteger()
+def buildVersionName = System.getenv("VERSION_NAME") ?: "1.0"
+
 android {
     namespace 'com.example.trackingapplication'
     compileSdk 34
@@ -11,10 +16,9 @@ android {
         minSdk 23
         targetSdk 34
         // Auto-update: every CI build gets a unique, increasing versionCode (from the
-        // GitHub run number) so the package installer accepts the update. Local
-        // builds fall back to 1.
-        versionCode (System.getenv("VERSION_CODE") ?: "1").toInteger()
-        versionName (System.getenv("VERSION_NAME") ?: "1.0")
+        // GitHub run number) so the package installer accepts the update.
+        versionCode buildVersionCode
+        versionName buildVersionName
 
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
     }
