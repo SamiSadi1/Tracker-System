@@ -169,26 +169,23 @@ public final class ApkUpdater {
 
             @Override
             public void onResponse(final Call call, final Response response) {
-                try {
-                    if (!response.isSuccessful() || response.body() == null) {
-                        postError(listener, "Download failed: HTTP " + response.code());
-                        return;
-                    }
-
-                    File apk = new File(cacheDirectory(),
-                            String.format(Locale.US, "update-%d.apk",
-                                    remoteVersion > 0 ? remoteVersion : System.currentTimeMillis()));
-
-                    if (!writeToFile(response.body(), apk)) {
-                        postError(listener, "Could not save the downloaded APK.");
-                        return;
-                    }
-
-                    install(apk, listener);
-
-                } catch (IOException e) {
-                    postError(listener, "Download failed: " + e.getMessage());
+                // writeToFile() reports its own IO failures; nothing here throws
+                // IOException, so no try/catch is needed.
+                if (!response.isSuccessful() || response.body() == null) {
+                    postError(listener, "Download failed: HTTP " + response.code());
+                    return;
                 }
+
+                File apk = new File(cacheDirectory(),
+                        String.format(Locale.US, "update-%d.apk",
+                                remoteVersion > 0 ? remoteVersion : System.currentTimeMillis()));
+
+                if (!writeToFile(response.body(), apk)) {
+                    postError(listener, "Could not save the downloaded APK.");
+                    return;
+                }
+
+                install(apk, listener);
             }
         });
     }
