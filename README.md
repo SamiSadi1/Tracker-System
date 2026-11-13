@@ -97,6 +97,59 @@ Messages  (id PK, sender, recipient, body, sentAt, readAt)
 Passwords are stored as salted, 10 000-round iterated SHA-256 hashes — never in
 plain text. `Session` holds the currently signed-in e-mail.
 
+## 3b. Inspecting the database (optional)
+
+SQLite needs **no setup** — it ships with Android and the `tracker.db` file is
+created automatically on first launch. Nothing to install, no server, no account.
+
+To look inside the data on your phone:
+
+```bash
+# 1. Plug the phone in with USB debugging enabled, then:
+adb shell run-as com.example.trackingapplication \
+    sqlite3 databases/tracker.db
+
+# 2. Now you are in SQLite. Useful queries:
+.headers on
+.mode column
+.tables
+SELECT email, name, role FROM Users;
+SELECT email, latitude, longitude, datetime(updatedAt/1000,'unixepoch') FROM Locations;
+SELECT body, datetime(sentAt/1000,'unixepoch') FROM Messages ORDER BY sentAt DESC LIMIT 10;
+.quit
+```
+
+`run-as` works because it runs the shell as your app's own user — so it can only
+see your app's private files. Nothing is exposed to other apps.
+
+**Copy the file out** (for a backup or to open it in DB Browser for SQLite):
+
+```bash
+adb exec-out run-as com.example.trackingapplication \
+    cat databases/tracker.db > tracker.db
+```
+
+Then open `tracker.db` with <https://sqlitebrowser.org>.
+
+**Reset everything** (start with no accounts):
+
+```bash
+adb shell run-as com.example.trackingapplication rm databases/tracker.db
+# or on the phone: Settings -> Apps -> Tracker System -> Storage -> Clear data
+```
+
+### What is in the schema (v2)
+
+```sql
+Users     (email PK, name, department, phone, role, passwordSalt, passwordHash, createdAt)
+Locations (email PK, latitude, longitude, address, updatedAt)
+Session   (id=1, email)
+Messages  (id PK, sender, recipient, body, sentAt, readAt)
+```
+
+Schema changes must go through `onUpgrade()` — never delete the file to "fix" a
+schema change, or users lose their accounts.
+
 ## 4. Permissions
 
 `ACCESS_FINE_LOCATION`, `ACCESS_COARSE_LOCATION` (both requested together, as
