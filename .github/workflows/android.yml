@@ -62,3 +62,49 @@ jobs:
           name: app-debug
           path: app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
+
+  # Publishes the freshly built APK as a direct download so it can be installed
+  # on a phone without logging in to GitHub and unzipping an artifact.
+  publish:
+    name: Publish APK download
+    needs: build
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Download built APK
+        uses: actions/download-artifact@v4
+        with:
+          name: app-debug
+          path: apk
+
+      - name: Rename APK
+        run: mv apk/app-debug.apk apk/TrackerSystem-debug.apk
+
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -e
+          NOTES="Direct APK download — tap TrackerSystem-debug.apk below.
+
+          Install: tap the APK, allow 'Install unknown apps' for your browser/files app
+          when Android asks, then open Tracker System.
+
+          This is a debug build signed with a debug key: fine for testing, not for Play Store.
+          No Firebase, no setup — data is stored on the device."
+
+          if gh release view debug-latest > /dev/null 2>&1; then
+            gh release edit debug-latest --notes "$NOTES" --latest --target "$GITHUB_SHA"
+          else
+            gh release create debug-latest \
+              --title "Tracker System — latest build" \
+              --notes "$NOTES" \
+              --target "$GITHUB_SHA" \
+              --latest
+          fi
+
+          gh release upload debug-latest apk/TrackerSystem-debug.apk --clobber
