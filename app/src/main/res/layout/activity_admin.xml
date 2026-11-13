@@ -51,6 +51,14 @@
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintTop_toTopOf="@id/subtitle" />
 
+    <Button
+        android:id="@+id/messagesBtn"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="@string/open_messages"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintTop_toBottomOf="@id/subtitle" />
+
     <TextView
         android:id="@+id/summaryText"
         android:layout_width="0dp"
@@ -59,7 +67,7 @@
         android:textSize="13sp"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toBottomOf="@id/subtitle"
+        app:layout_constraintTop_toBottomOf="@id/messagesBtn"
         tools:text="3 users • 2 with a saved position" />
 
     <TextView

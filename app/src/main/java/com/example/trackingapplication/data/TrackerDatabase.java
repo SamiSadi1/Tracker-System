@@ -21,7 +21,7 @@ import java.util.List;
 public class TrackerDatabase extends SQLiteOpenHelper {
 
     private static final String DB_NAME = "tracker.db";
-    private static final int DB_VERSION = 1;
+    private static final int DB_VERSION = 2;
 
     public static final String ROLE_ADMIN = "admin";
     public static final String ROLE_EMPLOYEE = "employee";
@@ -45,6 +45,22 @@ public class TrackerDatabase extends SQLiteOpenHelper {
                     "  address TEXT," +
                     "  updatedAt INTEGER NOT NULL)";
 
+    /**
+     * One row per delivered message. A conversation is identified by
+     * (userLow, userHigh) so a thread is independent of who sent what.
+     */
+    private static final String CREATE_MESSAGES =
+            "CREATE TABLE Messages (" +
+                    "  id INTEGER PRIMARY KEY AUTOINCREMENT," +
+                    "  sender TEXT NOT NULL," +
+                    "  recipient TEXT NOT NULL," +
+                    "  body TEXT NOT NULL," +
+                    "  sentAt INTEGER NOT NULL," +
+                    "  readAt INTEGER)";
+
+    private static final String CREATE_MESSAGES_INDEX =
+            "CREATE INDEX idx_messages_thread ON Messages (sender, recipient, sentAt)";
+
     private static final String CREATE_SESSION =
             "CREATE TABLE Session (" +
                     "  id INTEGER PRIMARY KEY CHECK (id = 1)," +
@@ -63,11 +79,18 @@ public class TrackerDatabase extends SQLiteOpenHelper {
         db.execSQL(CREATE_USERS);
         db.execSQL(CREATE_LOCATIONS);
         db.execSQL(CREATE_SESSION);
+        db.execSQL(CREATE_MESSAGES);
+        db.execSQL(CREATE_MESSAGES_INDEX);
     }
 
     @Override
     public void onUpgrade(SQLiteDatabase db, int oldVersion, int newVersion) {
-        // No migrations yet — bump DB_VERSION and add them here when the schema changes.
+        // Existing installs already hold accounts and positions, so migrations must
+        // only add what is missing — never drop data.
+        if (oldVersion < 2) {
+            db.execSQL(CREATE_MESSAGES);
+            db.execSQL(CREATE_MESSAGES_INDEX);
+        }
     }
 
     // ------------------------------------------------------------------
@@ -338,6 +361,169 @@ public class TrackerDatabase extends SQLiteOpenHelper {
             cursor.close();
         }
         return result;
+    }
+
+    // ------------------------------------------------------------------
+    // Messages (offline: stored and delivered on this device)
+    // ------------------------------------------------------------------
+
+    /** A single message between two accounts. */
+    public static class Message {
+        public final long id;
+        public final String sender;
+        public final String recipient;
+        public final String body;
+        public final long sentAt;
+        public final Long readAt;
+
+        public Message(long id, String sender, String recipient, String body,
+                       long sentAt, Long readAt) {
+            this.id = id;
+            this.sender = sender;
+            this.recipient = recipient;
+            this.body = body;
+            this.sentAt = sentAt;
+            this.readAt = readAt;
+        }
+    }
+
+    /** A conversation summary for the inbox list. */
+    public static class Conversation {
+        public final String otherEmail;
+        public final String otherName;
+        public final String lastMessage;
+        public final long lastAt;
+        public final int unreadCount;
+
+        public Conversation(String otherEmail, String otherName, String lastMessage,
+                            long lastAt, int unreadCount) {
+            this.otherEmail = otherEmail;
+            this.otherName = otherName;
+            this.lastMessage = lastMessage;
+            this.lastAt = lastAt;
+            this.unreadCount = unreadCount;
+        }
+    }
+
+    /** Stores a message and returns its id. */
+    public long sendMessage(String sender, String recipient, String body) {
+        ContentValues values = new ContentValues();
+        values.put("sender", normalizeEmail(sender));
+        values.put("recipient", normalizeEmail(recipient));
+        values.put("body", body == null ? "" : body.trim());
+        values.put("sentAt", System.currentTimeMillis());
+        return getWritableDatabase().insert("Messages", null, values);
+    }
+
+    /**
+     * Full history of a conversation, oldest first.
+     *
+     * @param userLow  the lexicographically smaller e-mail
+     * @param userHigh the other one
+     */
+    public List<Message> conversation(String a, String b) {
+        String low = threadKeyLow(a, b);
+        String high = threadKeyHigh(a, b);
+
+        List<Message> messages = new ArrayList<>();
+        Cursor cursor = getReadableDatabase().query(
+                "Messages",
+                new String[]{"id", "sender", "recipient", "body", "sentAt", "readAt"},
+                "(sender = ? AND recipient = ?) OR (sender = ? AND recipient = ?)",
+                new String[]{low, high, high, low},
+                null, null, "sentAt ASC, id ASC");
+        try {
+            while (cursor.moveToNext()) {
+                messages.add(new Message(
+                        cursor.getLong(0), cursor.getString(1), cursor.getString(2),
+                        cursor.getString(3), cursor.getLong(4),
+                        cursor.isNull(5) ? null : cursor.getLong(5)));
+            }
+        } finally {
+            cursor.close();
+        }
+        return messages;
+    }
+
+    /**
+     * Inbox for a user: one entry per conversation partner, newest first, with the
+     * number of unread messages from that partner.
+     */
+    public List<Conversation> conversationsFor(String email) {
+        String me = normalizeEmail(email);
+
+        List<Conversation> result = new ArrayList<>();
+        Cursor cursor = getReadableDatabase().rawQuery(
+                "SELECT partner, body, sentAt FROM (" +
+                        "  SELECT CASE WHEN sender = ? THEN recipient ELSE sender END AS partner," +
+                        "         body, sentAt, id," +
+                        "         ROW_NUMBER() OVER (" +
+                        "           PARTITION BY CASE WHEN sender = ? THEN recipient ELSE sender END" +
+                        "           ORDER BY sentAt DESC, id DESC) AS rn" +
+                        "  FROM Messages WHERE sender = ? OR recipient = ?" +
+                        ") WHERE rn = 1 ORDER BY sentAt DESC",
+                new String[]{me, me, me, me});
+        try {
+            while (cursor.moveToNext()) {
+                String partner = cursor.getString(0);
+                String last = cursor.getString(1);
+                long lastAt = cursor.getLong(2);
+
+                User partnerUser = findUser(partner);
+                String partnerName = partnerUser != null ? partnerUser.name : partner;
+
+                result.add(new Conversation(partner, partnerName, last, lastAt,
+                        unreadCount(partner, me)));
+            }
+        } finally {
+            cursor.close();
+        }
+        return result;
+    }
+
+    /** Number of messages from {@code from} that {@code to} has not read yet. */
+    public int unreadCount(String from, String to) {
+        Cursor cursor = getReadableDatabase().rawQuery(
+                "SELECT COUNT(*) FROM Messages " +
+                        "WHERE sender = ? AND recipient = ? AND readAt IS NULL",
+                new String[]{normalizeEmail(from), normalizeEmail(to)});
+        try {
+            return cursor.moveToFirst() ? cursor.getInt(0) : 0;
+        } finally {
+            cursor.close();
+        }
+    }
+
+    /** Marks everything a partner sent as read. */
+    public void markConversationRead(String me, String partner) {
+        ContentValues values = new ContentValues();
+        values.put("readAt", System.currentTimeMillis());
+        getWritableDatabase().update("Messages", values,
+                "sender = ? AND recipient = ? AND readAt IS NULL",
+                new String[]{normalizeEmail(partner), normalizeEmail(me)});
+    }
+
+    public int totalUnread(String email) {
+        Cursor cursor = getReadableDatabase().rawQuery(
+                "SELECT COUNT(*) FROM Messages WHERE recipient = ? AND readAt IS NULL",
+                new String[]{normalizeEmail(email)});
+        try {
+            return cursor.moveToFirst() ? cursor.getInt(0) : 0;
+        } finally {
+            cursor.close();
+        }
+    }
+
+    private static String threadKeyLow(String a, String b) {
+        String x = normalizeEmail(a);
+        String y = normalizeEmail(b);
+        return x.compareTo(y) <= 0 ? x : y;
+    }
+
+    private static String threadKeyHigh(String a, String b) {
+        String x = normalizeEmail(a);
+        String y = normalizeEmail(b);
+        return x.compareTo(y) <= 0 ? y : x;
     }
 
     // ------------------------------------------------------------------

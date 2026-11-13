@@ -63,6 +63,14 @@ public class AdminActivity extends AppCompatActivity {
             }
         });
 
+        final Button messages = findViewById(R.id.messagesBtn);
+        messages.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                startActivity(new Intent(getApplicationContext(), MessagesActivity.class));
+            }
+        });
+
         Button signOut = findViewById(R.id.signOutBtn);
         signOut.setOnClickListener(new View.OnClickListener() {
             @Override
@@ -82,6 +90,13 @@ public class AdminActivity extends AppCompatActivity {
 
     private void loadUsers() {
         List<TrackerDatabase.UserLocation> users = db.usersWithLocations();
+
+        TrackerDatabase.User me = db.currentUser();
+        int unread = me == null ? 0 : db.totalUnread(me.email);
+        Button messagesButton = findViewById(R.id.messagesBtn);
+        messagesButton.setText(unread > 0
+                ? "Messages (" + unread + " new)"
+                : getString(R.string.open_messages));
 
         adapter.setUsers(users);
 

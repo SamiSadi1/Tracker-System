@@ -35,6 +35,7 @@ public class MainActivity extends AppCompatActivity {
         TextView role = findViewById(R.id.roleText);
         Switch trackingSwitch = findViewById(R.id.trackingSwitch);
         Button openLocation = findViewById(R.id.openLocationBtn);
+        Button messages = findViewById(R.id.messagesBtn);
         Button signOut = findViewById(R.id.signOutBtn);
 
         greeting.setText("Hello, " + currentUser.name);
@@ -49,6 +50,18 @@ public class MainActivity extends AppCompatActivity {
             @Override
             public void onClick(View v) {
                 startActivity(new Intent(getApplicationContext(), LocationActivity.class));
+            }
+        });
+
+        int unread = db.totalUnread(currentUser.email);
+        messages.setText(unread > 0
+                ? "Messages (" + unread + " new)"
+                : getString(R.string.open_messages));
+
+        messages.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                startActivity(new Intent(getApplicationContext(), MessagesActivity.class));
             }
         });
 

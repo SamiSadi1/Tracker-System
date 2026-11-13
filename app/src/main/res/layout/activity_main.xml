@@ -72,6 +72,13 @@
     </com.google.android.material.card.MaterialCardView>
 
     <Button
+        android:id="@+id/messagesBtn"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="16dp"
+        android:text="@string/open_messages" />
+
+    <Button
         android:id="@+id/signOutBtn"
         style="?attr/materialButtonOutlinedStyle"
         android:layout_width="match_parent"

@@ -14,4 +14,11 @@
     <string name="refresh">Refresh</string>
     <string name="check_for_updates">Check for updates</string>
     <string name="version_label">Version %1$s (%2$d)</string>
+    <string name="messages">Messages</string>
+    <string name="new_message">New message</string>
+    <string name="no_conversations">No conversations yet. Tap "New message" to start one.</string>
+    <string name="type_a_message">Type a message…</string>
+    <string name="send">Send</string>
+    <string name="back">Back</string>
+    <string name="open_messages">Messages</string>
 </resources>

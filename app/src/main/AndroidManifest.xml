@@ -41,6 +41,15 @@
         <activity
             android:name=".LocationActivity"
             android:exported="false" />
+        <activity
+            android:name=".MessagesActivity"
+            android:exported="false" />
+        <activity
+            android:name=".ChatActivity"
+            android:exported="false" />
+        <activity
+            android:name=".NewMessageActivity"
+            android:exported="false" />
 
         <!-- Shares the downloaded APK with the installer (required since Android 7) -->
         <provider
