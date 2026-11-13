@@ -453,15 +453,21 @@ public class TrackerDatabase extends SQLiteOpenHelper {
         String me = normalizeEmail(email);
 
         List<Conversation> result = new ArrayList<>();
+        // NOTE: no window functions here. ROW_NUMBER() OVER (...) needs SQLite 3.25+,
+        // which only ships from API 29 (Android 10) onwards; minSdk is 23, so the
+        // inbox would throw "near OVER: syntax error" on Android 6-9. A grouped
+        // query does the same job with syntax every supported version understands.
         Cursor cursor = getReadableDatabase().rawQuery(
-                "SELECT partner, body, sentAt FROM (" +
+                "SELECT partner, body, lastAt FROM (" +
                         "  SELECT CASE WHEN sender = ? THEN recipient ELSE sender END AS partner," +
-                        "         body, sentAt, id," +
-                        "         ROW_NUMBER() OVER (" +
-                        "           PARTITION BY CASE WHEN sender = ? THEN recipient ELSE sender END" +
-                        "           ORDER BY sentAt DESC, id DESC) AS rn" +
+                        "         MAX(sentAt) AS lastAt" +
                         "  FROM Messages WHERE sender = ? OR recipient = ?" +
-                        ") WHERE rn = 1 ORDER BY sentAt DESC",
+                        "  GROUP BY partner" +
+                        ") summary JOIN Messages m" +
+                        "  ON m.sentAt = summary.lastAt" +
+                        " AND (CASE WHEN m.sender = ? THEN m.recipient ELSE m.sender END) = summary.partner" +
+                        " GROUP BY summary.partner" +
+                        " ORDER BY lastAt DESC",
                 new String[]{me, me, me, me});
         try {
             while (cursor.moveToNext()) {
