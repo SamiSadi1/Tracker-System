@@ -50,6 +50,39 @@ The app can update itself: **Login screen → Check for updates**.
 
 No internet connection is required at any point.
 
+## 2b. Offline messaging
+
+Both homes have a **Messages** button (labelled *Messages (N new)* when something
+is unread).
+
+1. **Messages → New message** → pick any other account registered on the device.
+2. Type and tap **Send**. It is stored immediately — no network involved.
+3. The inbox shows the last message, time and an unread badge; opening a thread
+   marks it read.
+
+### What "offline" honestly means here
+
+Messages are rows in the on-device SQLite database, so they are delivered
+instantly, work in airplane mode, and never leave the phone.
+
+**The catch:** two *different phones* cannot talk to each other, because there is
+no shared server in between. On one phone, two accounts (for example one Admin
+and one Employee) can chat — which is enough to demo, test and use the app
+single-device — but a message sent by an account on phone A cannot reach phone B.
+
+If you need real phone-to-phone messaging, that requires a network path. The
+options, cheapest first:
+
+| Option | What it gives you | Setup |
+|---|---|---|
+| **LAN / hotspot sync** | phones on the same Wi-Fi sync messages peer-to-peer | no account, no server; both phones must be on the same network and the app open |
+| **Supabase** | real multi-device chat + realtime | free project, one URL + anon key |
+| **Firebase** | same, but console toggles again | back to the setup that was removed |
+
+The `Messages` table and the whole UI already exist, so any of these only means
+replacing the send/receive functions in `data/TrackerDatabase.java` — the screens
+do not change.
+
 ## 3. Where the data lives
 
 `tracker.db` (SQLite), in the app's private storage:
@@ -58,6 +91,7 @@ No internet connection is required at any point.
 Users     (email PK, name, department, phone, role, passwordSalt, passwordHash, createdAt)
 Locations (email PK, latitude, longitude, address, updatedAt)
 Session   (id=1, email)          -- keeps you signed in between launches
+Messages  (id PK, sender, recipient, body, sentAt, readAt)
 ```
 
 Passwords are stored as salted, 10 000-round iterated SHA-256 hashes — never in
@@ -102,3 +136,6 @@ call sites.
 | `LoginActivity` / `RegisterActivity` | local sign-in / sign-up |
 | `LocationActivity` | GPS + reverse geocoding + saving |
 | `AdminActivity` + `UserAdapter` | admin list |
+| `MessagesActivity` + `ConversationAdapter` | inbox, unread counters |
+| `ChatActivity` + `ChatAdapter` | one conversation, bubbles |
+| `NewMessageActivity` + `ContactAdapter` | pick a recipient |
