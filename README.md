@@ -1,5 +1,10 @@
 # Tracker-System — running the app
 
+> **Firebase is not "done" by building the app.** The code is wired for Firebase
+> project `tracking-9a64f`, but two settings live in the Firebase console and can
+> only be done by the project owner: **enable Email/Password auth** and **publish
+> `firestore.rules`**. Until then sign-in/registration fail and nothing is saved.
+
 ## 1. Build
 
 The APK is built by CI on every push (`.github/workflows/android.yml`).
@@ -21,6 +26,15 @@ make sure the package name is still `com.example.trackingapplication`.
 | Authentication | Sign-in method → **Email/Password → Enable** |
 | Firestore Database | Create the database (production or test mode) |
 | Firestore → Rules | Paste `firestore.rules` from this repo and **Publish** |
+
+The rules are also deployable from this repo (the project id is already set in
+`.firebaserc`):
+
+```bash
+npm i -g firebase-tools
+firebase login
+firebase deploy --only firestore:rules     # uses firebase.json + firestore.rules
+```
 
 > Without the rules in step 2 the app looks broken: the default rules deny every
 > read and write, so saving a location and loading the admin list both fail.
