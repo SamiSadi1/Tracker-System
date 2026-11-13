@@ -212,6 +212,7 @@ public final class ApkUpdater {
         } finally {
             closeQuietly(input);
             closeQuietly(output);
+            // close() itself does not throw.
             body.close();
         }
     }
