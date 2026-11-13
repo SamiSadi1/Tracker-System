@@ -85,3 +85,38 @@ kept for compatibility.
 `.github/workflows/android.yml` — JDK 17, Android SDK (runner-provided with a
 command-line-tools fallback), `assembleDebug`, `testDebugUnitTest`, and upload of
 the debug APK. Runs on every push and pull request.
+
+
+## 6. Runtime features implemented after the rebuild
+
+The build being fixed did **not** make the app actually track: `getLastLocation()`
+(the only method writing to Firestore) was commented out at both call sites and
+the live-update callback only logged to Logcat. `AdminActivity` was an empty
+`ConstraintLayout`. Both are now implemented:
+
+**`LocationActivity` (rewritten)**
+- Saves `Location/{uid}` directly from the location callback: `Uid`, `E-mail`,
+  `Latitude`, `Longitude`, `Address`, `Updated` (`serverTimestamp`).
+- First fix saves immediately, later updates are throttled to every 15 s.
+- Reverse geocoding runs on a background `ExecutorService` (it does network/disk
+  I/O), with a coordinates-only fallback when no geocoder backend is available.
+- Migrated to `LocationRequest.Builder` + `Priority` (the old setters are deprecated).
+- Requests FINE **and** COARSE together, as Android 12+ requires.
+- Inline status text for the current fix and the save result, plus explicit
+  messages for denied permission / unavailable provider (previously silent).
+
+**`AdminActivity` + `UserAdapter`**
+- Lists every document under `Users/` with name, e-mail, role and department,
+  and joins `Location/{uid}` for the last known position and its timestamp.
+- Empty state, error banner, Refresh and Sign out.
+
+**Supporting changes**
+- `firestore.rules` — the default rules deny all reads/writes, which would make
+  both saving and the admin list fail. Rules allow a user to read/write their own
+  profile and position, and an admin (profile carrying `isAdmin`) to read all.
+- `README.md` — Firebase setup steps (enable Email/Password, publish rules) and
+  the data model.
+- `MainActivity` gains a Sign out button.
+
+**Key consistency:** profiles are keyed by e-mail (`Users/{email}`), positions by
+uid (`Location/{uid}`) — writer and reader both use uid, verified.
