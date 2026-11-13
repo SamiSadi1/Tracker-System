@@ -1,4 +1,12 @@
 <resources>
     <string name="app_name">TrackingApplication</string>
     <string name="location">Location</string>
+    <string name="location_tracking">Location tracking</string>
+    <string name="waiting_for_gps">Waiting for a location fix…</string>
+    <string name="admin_panel">Admin panel</string>
+    <string name="registered_users">Registered users</string>
+    <string name="no_users_yet">No users registered yet.</string>
+    <string name="no_location_yet">No location saved</string>
+    <string name="sign_out">Sign out</string>
+    <string name="refresh">Refresh</string>
 </resources>

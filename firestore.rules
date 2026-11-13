@@ -1,0 +1,41 @@
+rules_version = '2';
+
+// Tracker-System Firestore rules.
+//
+// IMPORTANT: without these, the app silently fails — the default rules deny all
+// reads/writes. Publish them with:
+//   Firebase console -> Firestore Database -> Rules -> paste -> Publish
+//   (or) firebase deploy --only firestore:rules
+//
+// Data model:
+//   Users/{email}     { Name, E-mail, Department, ContactNo, isAdmin?, isUser?, Created }
+//   Location/{uid}    { Uid, E-mail, Latitude, Longitude, Address, Updated }
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    // An admin is a signed-in user whose own profile carries isAdmin.
+    function isAdmin() {
+      return signedIn()
+        && exists(/databases/$(database)/documents/Users/$(request.auth.token.email))
+        && get(/databases/$(database)/documents/Users/$(request.auth.token.email)).data.isAdmin != null;
+    }
+
+    // Profiles are keyed by e-mail (see RegisterActivity / LoginActivity).
+    match /Users/{email} {
+      allow read: if signedIn() && (request.auth.token.email == email || isAdmin());
+      allow create: if signedIn() && request.auth.token.email == email;
+      allow update, delete: if signedIn() && (request.auth.token.email == email || isAdmin());
+    }
+
+    // Positions are keyed by uid and written by LocationActivity.
+    match /Location/{uid} {
+      allow read: if signedIn() && (request.auth.uid == uid || isAdmin());
+      allow create, update: if signedIn() && request.auth.uid == uid;
+      allow delete: if isAdmin();
+    }
+  }
+}

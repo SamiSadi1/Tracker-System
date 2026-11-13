@@ -14,7 +14,7 @@ import android.location.Geocoder;
 import android.location.Location;
 import android.os.Bundle;
 import android.os.Looper;
-import android.util.Log;
+import android.widget.TextView;
 import android.widget.Toast;
 
 import com.google.android.gms.common.api.ResolvableApiException;
@@ -25,45 +25,68 @@ import com.google.android.gms.location.LocationResult;
 import com.google.android.gms.location.LocationServices;
 import com.google.android.gms.location.LocationSettingsRequest;
 import com.google.android.gms.location.LocationSettingsResponse;
+import com.google.android.gms.location.Priority;
 import com.google.android.gms.location.SettingsClient;
-import com.google.android.gms.tasks.OnCompleteListener;
 import com.google.android.gms.tasks.OnFailureListener;
 import com.google.android.gms.tasks.OnSuccessListener;
 import com.google.android.gms.tasks.Task;
 import com.google.firebase.auth.FirebaseAuth;
-import com.google.firebase.firestore.DocumentReference;
-import com.google.firebase.firestore.DocumentSnapshot;
-import com.google.firebase.firestore.EventListener;
+import com.google.firebase.auth.FirebaseUser;
+import com.google.firebase.firestore.FieldValue;
 import com.google.firebase.firestore.FirebaseFirestore;
-import com.google.firebase.firestore.FirebaseFirestoreException;
 
+import java.io.IOException;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
+/**
+ * Tracks the signed-in user and writes the position to
+ * Firestore -> Location/{uid}  (see README / firestore.rules).
+ *
+ * The previous version of this class never saved anything: the method that wrote
+ * to Firestore was commented out at both call sites and the live-update callback
+ * only logged to Logcat. Saving now happens straight from the location callback.
+ */
 public class LocationActivity extends AppCompatActivity {
 
-    FirebaseAuth fAuth;
-    FirebaseFirestore fstore;
-    String userId;
-    String email;
-    String name;
-
     private static final String TAG = "LocationActivity";
-    int LOCATION_REQUEST_CODE = 10001;
 
-    FusedLocationProviderClient fusedLocationProviderClient;
-    LocationRequest locationRequest;
+    private static final int LOCATION_REQUEST_CODE = 10001;
+    private static final int LOCATION_SETTINGS_REQUEST_CODE = 1001;
 
-    LocationCallback locationCallback = new LocationCallback() {
+    /** Don't hammer Firestore: persist at most once every 15 seconds. */
+    private static final long MIN_SAVE_INTERVAL_MS = 15_000L;
+
+    private FusedLocationProviderClient fusedLocationProviderClient;
+    private LocationRequest locationRequest;
+    private FirebaseFirestore fstore;
+    private TextView statusText;
+
+    private long lastSavedAt = 0L;
+    private boolean hasSavedOnce = false;
+
+    /** Geocoding touches the network/disk, so keep it off the main thread. */
+    private final ExecutorService geocodeExecutor = Executors.newSingleThreadExecutor();
+
+    private final LocationCallback locationCallback = new LocationCallback() {
         @Override
-        public void onLocationResult(LocationResult locationResult) {
-            if (locationResult == null) {
+        public void onLocationResult(@NonNull LocationResult locationResult) {
+            Location location = locationResult.getLastLocation();
+            if (location == null) {
                 return;
             }
-            for (Location location : locationResult.getLocations()) {
-                Log.d(TAG, "onLocationResult: " + location.toString());
+
+            showPosition(location);
+
+            long now = System.currentTimeMillis();
+            if (!hasSavedOnce || now - lastSavedAt >= MIN_SAVE_INTERVAL_MS) {
+                hasSavedOnce = true;
+                lastSavedAt = now;
+                saveLocation(location);
             }
         }
     };
@@ -73,19 +96,19 @@ public class LocationActivity extends AppCompatActivity {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_location);
 
+        statusText = findViewById(R.id.statusText);
+        fstore = FirebaseFirestore.getInstance();
         fusedLocationProviderClient = LocationServices.getFusedLocationProviderClient(this);
 
-        locationRequest = LocationRequest.create();
-        locationRequest.setInterval(4000);
-        locationRequest.setFastestInterval(2000);
-        locationRequest.setPriority(LocationRequest.PRIORITY_HIGH_ACCURACY);
+        locationRequest = new LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, 4000L)
+                .setMinUpdateIntervalMillis(2000L)
+                .build();
     }
 
     @Override
     protected void onStart() {
         super.onStart();
-        if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED) {
-//            getLastLocation();
+        if (hasLocationPermission()) {
             checkSettingsAndStartLocationUpdates();
         } else {
             askLocationPermission();
@@ -98,47 +121,92 @@ public class LocationActivity extends AppCompatActivity {
         stopLocationUpdates();
     }
 
+    @Override
+    protected void onDestroy() {
+        super.onDestroy();
+        geocodeExecutor.shutdown();
+    }
+
+    // ------------------------------------------------------------------
+    // Permissions / settings
+    // ------------------------------------------------------------------
+
+    private boolean hasLocationPermission() {
+        return ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION)
+                == PackageManager.PERMISSION_GRANTED;
+    }
+
+    private void askLocationPermission() {
+        if (hasLocationPermission()) {
+            return;
+        }
+        // Android 12+ needs fine AND coarse to be requested together, otherwise the
+        // user is only offered "approximate".
+        ActivityCompat.requestPermissions(this,
+                new String[]{
+                        Manifest.permission.ACCESS_FINE_LOCATION,
+                        Manifest.permission.ACCESS_COARSE_LOCATION
+                },
+                LOCATION_REQUEST_CODE);
+    }
+
+    @Override
+    public void onRequestPermissionsResult(int requestCode,
+                                           @NonNull String[] permissions,
+                                           @NonNull int[] grantResults) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+
+        if (requestCode == LOCATION_REQUEST_CODE) {
+            if (grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+                checkSettingsAndStartLocationUpdates();
+            } else {
+                setStatus("Location permission denied. Tracking cannot start.");
+            }
+        }
+    }
+
     private void checkSettingsAndStartLocationUpdates() {
         LocationSettingsRequest request = new LocationSettingsRequest.Builder()
-                .addLocationRequest(locationRequest).build();
+                .addLocationRequest(locationRequest)
+                .build();
         SettingsClient client = LocationServices.getSettingsClient(this);
 
-        Task<LocationSettingsResponse> locationSettingsResponseTask = client.checkLocationSettings(request);
-        locationSettingsResponseTask.addOnSuccessListener(new OnSuccessListener<LocationSettingsResponse>() {
-            @Override
-            public void onSuccess(LocationSettingsResponse locationSettingsResponse) {
-                //Settings of device are satisfied and we can start location updates
-                startLocationUpdates();
-            }
-        });
+        Task<LocationSettingsResponse> locationSettingsResponseTask =
+                client.checkLocationSettings(request);
+
+        locationSettingsResponseTask.addOnSuccessListener(
+                new OnSuccessListener<LocationSettingsResponse>() {
+                    @Override
+                    public void onSuccess(LocationSettingsResponse locationSettingsResponse) {
+                        startLocationUpdates();
+                    }
+                });
+
         locationSettingsResponseTask.addOnFailureListener(new OnFailureListener() {
             @Override
             public void onFailure(@NonNull Exception e) {
                 if (e instanceof ResolvableApiException) {
                     ResolvableApiException apiException = (ResolvableApiException) e;
                     try {
-                        apiException.startResolutionForResult(LocationActivity.this, 1001);
+                        apiException.startResolutionForResult(
+                                LocationActivity.this, LOCATION_SETTINGS_REQUEST_CODE);
                     } catch (IntentSender.SendIntentException ex) {
-                        ex.printStackTrace();
+                        setStatus("Could not open location settings: " + ex.getMessage());
                     }
+                } else {
+                    setStatus("Location is not available on this device: " + e.getMessage());
                 }
             }
         });
     }
 
     private void startLocationUpdates() {
-
-        if (ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED && ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
-            // TODO: Consider calling
-            //    ActivityCompat#requestPermissions
-            // here to request the missing permissions, and then overriding
-            //   public void onRequestPermissionsResult(int requestCode, String[] permissions,
-            //                                          int[] grantResults)
-            // to handle the case where the user grants the permission. See the documentation
-            // for ActivityCompat#requestPermissions for more details.
+        if (!hasLocationPermission()) {
             return;
         }
-        fusedLocationProviderClient.requestLocationUpdates(locationRequest, locationCallback, Looper.getMainLooper());
+        setStatus("Tracking… waiting for a GPS fix.");
+        fusedLocationProviderClient.requestLocationUpdates(
+                locationRequest, locationCallback, Looper.getMainLooper());
     }
 
     private void stopLocationUpdates() {
@@ -147,156 +215,99 @@ public class LocationActivity extends AppCompatActivity {
         }
     }
 
-    private void getLastLocation() {
+    // ------------------------------------------------------------------
+    // Saving to Firestore
+    // ------------------------------------------------------------------
 
-
-        fAuth = FirebaseAuth.getInstance();
-        fstore = FirebaseFirestore.getInstance();
-        if (fAuth.getCurrentUser() == null) {
+    private void saveLocation(@NonNull final Location location) {
+        final FirebaseUser user = FirebaseAuth.getInstance().getCurrentUser();
+        if (user == null) {
+            setStatus("You are signed out — nothing to save.");
             return;
         }
-        userId = fAuth.getCurrentUser().getEmail();
 
-        DocumentReference documentReference = fstore.collection("Users").document(userId);
-        documentReference.addSnapshotListener(this, new EventListener<DocumentSnapshot>() {
+        final String uid = user.getUid();
+        final String email = user.getEmail();
+        final double lat = location.getLatitude();
+        final double lng = location.getLongitude();
+
+        geocodeExecutor.execute(new Runnable() {
             @Override
-            public void onEvent(@Nullable DocumentSnapshot value, @Nullable FirebaseFirestoreException error) {
+            public void run() {
+                final String address = resolveAddress(lat, lng);
 
-                if (value != null && value.exists()) {
-                    email = value.getString("E-mail");
-                    name = value.getString("Name");
-                }
-            }
-        });
-        if (ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED && ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
-            // TODO: Consider calling
-            //    ActivityCompat#requestPermissions
-            // here to request the missing permissions, and then overriding
-            //   public void onRequestPermissionsResult(int requestCode, String[] permissions,
-            //                                          int[] grantResults)
-            // to handle the case where the user grants the permission. See the documentation
-            // for ActivityCompat#requestPermissions for more details.
-            return;
-        }
-        Task<Location> locationTask = fusedLocationProviderClient.getLastLocation();
-        locationTask.addOnSuccessListener(new OnSuccessListener<Location>() {
-            @Override
-            public void onSuccess(Location location) {
-                if (location != null) {
-                    fAuth = FirebaseAuth.getInstance();
-                    fstore = FirebaseFirestore.getInstance();
-                    userId = fAuth.getCurrentUser().getUid();
+                Map<String, Object> data = new HashMap<>();
+                data.put("Uid", uid);
+                data.put("E-mail", email);
+                data.put("Latitude", lat);
+                data.put("Longitude", lng);
+                data.put("Address", address);
+                data.put("Updated", FieldValue.serverTimestamp());
 
-                    Toast.makeText(LocationActivity.this, "E-mail: "+email, Toast.LENGTH_SHORT).show();
-                    Toast.makeText(LocationActivity.this,location.getLatitude() +"/"+location.getLongitude(), Toast.LENGTH_SHORT).show();
-                    Toast.makeText(LocationActivity.this, "address: "+getCOmpleteAddress(location.getLatitude(), location.getLongitude()), Toast.LENGTH_SHORT).show();
-                    DocumentReference df = fstore.collection("Location").document(userId);
-                    Map<String,Object> userinfo = new HashMap<>();
-                    userinfo.put("E-mail",email);
-                    userinfo.put("Latitude",location.getLatitude());
-                    userinfo.put("Longitude",location.getLongitude());
-
-                    userinfo.put("Address",getCOmpleteAddress(location.getLatitude(), location.getLongitude()));
-                    df.set(userinfo).addOnCompleteListener(new OnCompleteListener<Void>() {
-                        @Override
-                        public void onComplete(@NonNull Task<Void> task) {
-
-                            if (task.isSuccessful()){
-
-                                Toast.makeText(LocationActivity.this, "Location saved", Toast.LENGTH_SHORT).show();
-
+                fstore.collection("Location").document(uid).set(data)
+                        .addOnSuccessListener(new OnSuccessListener<Void>() {
+                            @Override
+                            public void onSuccess(Void unused) {
+                                setStatus(String.format(Locale.US,
+                                        "Saved %s\n%.5f, %.5f\n%s",
+                                        email, lat, lng,
+                                        address.isEmpty() ? "(no address)" : address));
                             }
-                            else {
-                                Toast.makeText(LocationActivity.this, "Location Not Saved", Toast.LENGTH_SHORT).show();
+                        })
+                        .addOnFailureListener(new OnFailureListener() {
+                            @Override
+                            public void onFailure(@NonNull Exception e) {
+                                setStatus("Could not save location: " + e.getMessage());
                             }
-                        }
-                    }).addOnFailureListener(new OnFailureListener() {
-                        @Override
-                        public void onFailure(@NonNull Exception e) {
-                            Toast.makeText(LocationActivity.this, "Error!!!"+e.getMessage(), Toast.LENGTH_SHORT).show();
-                        }
-                    });
-
-                } else  {
-                    //Log.d(TAG, "onSuccess: Location was null...");
-                    Toast.makeText(LocationActivity.this, "onSuccess: Location was null...", Toast.LENGTH_SHORT).show();
-                }
+                        });
             }
         });
-        locationTask.addOnFailureListener(new OnFailureListener() {
-            @Override
-            public void onFailure(@NonNull Exception e) {
-                //Log.e(TAG, "onFailure: " + e.getLocalizedMessage() );
-                Toast.makeText(LocationActivity.this, "onFailure: " + e.getLocalizedMessage(), Toast.LENGTH_SHORT).show();
-            }
-        });
-
     }
-    private String getCOmpleteAddress(Double latitude, Double longitude) {
 
-        String address = "";
-
+    /** Blocking geocoder call — always runs on {@link #geocodeExecutor}. */
+    private String resolveAddress(double latitude, double longitude) {
+        if (!Geocoder.isPresent()) {
+            return "";
+        }
         Geocoder geocoder = new Geocoder(LocationActivity.this, Locale.getDefault());
-
-        try{
-
+        try {
             @SuppressWarnings("deprecation")
-            List<Address> addresses = geocoder.getFromLocation(latitude,longitude,1);
-
-            if(addresses != null && !addresses.isEmpty()){
-
-                Address returnAddress = addresses.get(0);
-                StringBuilder stringBuilderReturnAddress =  new StringBuilder("");
-
-                for(int i=0; i<=returnAddress.getMaxAddressLineIndex();i++){
-                    stringBuilderReturnAddress.append(returnAddress.getAddressLine(i)).append("\n");
+            List<Address> addresses = geocoder.getFromLocation(latitude, longitude, 1);
+            if (addresses == null || addresses.isEmpty()) {
+                return "";
+            }
+            Address returnAddress = addresses.get(0);
+            StringBuilder builder = new StringBuilder();
+            for (int i = 0; i <= returnAddress.getMaxAddressLineIndex(); i++) {
+                if (i > 0) {
+                    builder.append('\n');
                 }
-
-                address = stringBuilderReturnAddress.toString();
-
+                builder.append(returnAddress.getAddressLine(i));
             }
-            else{
-                Toast.makeText(this, "Address not found", Toast.LENGTH_SHORT).show();
-            }
-
-        }
-        catch (Exception e){
-            Toast.makeText(this, e.getMessage(), Toast.LENGTH_SHORT).show();
-        }
-
-
-        return address;
-    }
-
-
-
-    private void askLocationPermission() {
-        if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
-            if (ActivityCompat.shouldShowRequestPermissionRationale(this, Manifest.permission.ACCESS_FINE_LOCATION)) {
-               // Log.d(TAG, "askLocationPermission: you should show an alert dialog...");
-                Toast.makeText(this, "askLocationPermission: you should show an alert dialog...", Toast.LENGTH_SHORT).show();
-
-                ActivityCompat.requestPermissions(this, new String[] {Manifest.permission.ACCESS_FINE_LOCATION}, LOCATION_REQUEST_CODE);
-            } else {
-                ActivityCompat.requestPermissions(this, new String[] {Manifest.permission.ACCESS_FINE_LOCATION}, LOCATION_REQUEST_CODE);
-            }
-        }
-    }
-    @Override
-    public void onRequestPermissionsResult(int requestCode, @NonNull String[] permissions, @NonNull int[] grantResults) {
-
-        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
-        if (requestCode == LOCATION_REQUEST_CODE) {
-            if (grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
-                // Permission granted
-//                getLastLocation();
-                checkSettingsAndStartLocationUpdates();
-            } else {
-                //Permission not granted
-            }
+            return builder.toString();
+        } catch (IllegalArgumentException | IOException e) {
+            // No geocoder backend, or network unavailable — coordinates are still saved.
+            return "";
         }
     }
 
+    // ------------------------------------------------------------------
+    // UI helpers
+    // ------------------------------------------------------------------
 
+    private void showPosition(@NonNull Location location) {
+        setStatus(String.format(Locale.US, "Current position\n%.5f, %.5f",
+                location.getLatitude(), location.getLongitude()));
+    }
 
+    private void setStatus(final String message) {
+        runOnUiThread(new Runnable() {
+            @Override
+            public void run() {
+                if (statusText != null) {
+                    statusText.setText(message);
+                }
+            }
+        });
+    }
 }
