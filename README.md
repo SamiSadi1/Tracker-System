@@ -1,8 +1,15 @@
 # Tracker-System — running the app
 
-> **No Firebase, no setup.** This app now stores everything in an on-device
-> SQLite database, so it works the moment you install the APK: no Firebase
-> project, no `google-services.json`, no API keys, no console steps, no network.
+> **Two modes, one app.**
+>
+> * **Offline mode** (default) — everything is stored in an on-device SQLite
+>   database. Works the moment you install, no account anywhere, but data never
+>   leaves the phone, so two phones cannot see each other.
+> * **Cloud mode** — add a Supabase URL + anon key (5 minutes, free) and the app
+>   becomes a real communication app: accounts, messages and live locations sync
+>   **between phones**. SQLite is kept as an offline cache/fallback.
+>
+> The login screen tells you which mode the build is in.
 
 ## 1. Install the APK on your phone
 
@@ -49,6 +56,59 @@ The app can update itself: **Login screen → Check for updates**.
    panel lists every registered user and their last saved position.
 
 No internet connection is required at any point.
+
+## 1c. Enable cloud mode (cross-device messaging + live tracking)
+
+**You must do these three steps — I cannot create the project for you.**
+
+### Step 1 — create the project
+
+1. Sign up at <https://supabase.com> (free tier is plenty).
+2. **New project** → pick a name and a database password → wait ~2 minutes.
+
+### Step 2 — create the tables
+
+1. Open **SQL Editor → New query**.
+2. Paste the whole of [`supabase/schema.sql`](supabase/schema.sql) and press **Run**.
+
+That creates `profiles`, `locations`, `messages` plus row-level security
+policies, which is what allows phones to see each other.
+
+### Step 3 — put the keys in the app
+
+Copy **Project URL** and the **anon public** key from
+*Project Settings → API*, and add them to `local.properties` in the project root:
+
+```properties
+SUPABASE_URL=https://your-project.supabase.co
+SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6...
+```
+
+`local.properties` is git-ignored, so the key never becomes public. Rebuild
+(`./gradlew assembleDebug`) or push — CI reads the same values from
+`SUPABASE_URL` / `SUPABASE_ANON_KEY` environment variables if they are set as
+repository secrets.
+
+**Testing tip:** in *Authentication → Providers → Email*, turn **Confirm email**
+off while testing, otherwise a new account must click a link before signing in
+(the app detects this case and tells you).
+
+### What works once configured
+
+| Feature | Behaviour |
+|---|---|
+| Accounts | real Supabase Auth accounts, usable from any phone |
+| Messaging | message is stored locally *and* sent to the server; the chat screen polls every 4 s, so replies appear within seconds |
+| Live location | the background service publishes every 15 s; the admin board refreshes every 5 s and shows everyone's latest position |
+| Offline | if the network drops, messages and positions are still saved locally and the screens fall back to the SQLite cache |
+
+### Honest limits of this implementation
+
+* Sync is **polling**, not websockets — replies appear within ~4 s, not instantly.
+* Messages sent while offline are **not** re-sent automatically yet (they stay on
+  the device); a retry queue is the next step.
+* Everyone signed in can read everyone's position, by design for mutual tracking.
+  Narrow the policies in `supabase/schema.sql` if you want admin-only.
 
 ## 2b. Offline messaging
 
