@@ -12,6 +12,12 @@
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
 
+    <!-- Background tracking: a foreground service keeps recording until stopped,
+         and Android requires a visible notification for it. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
     <application
         android:allowBackup="true"
         android:icon="@mipmap/ic_launcher"
@@ -50,6 +56,14 @@
         <activity
             android:name=".NewMessageActivity"
             android:exported="false" />
+
+        <!-- Keeps recording position in the background until the user stops it.
+             foregroundServiceType is mandatory for targetSdk 34; "location" also
+             means apps on Android 14+ need the location permission first. -->
+        <service
+            android:name=".tracking.TrackingService"
+            android:exported="false"
+            android:foregroundServiceType="location" />
 
         <!-- Shares the downloaded APK with the installer (required since Android 7) -->
         <provider

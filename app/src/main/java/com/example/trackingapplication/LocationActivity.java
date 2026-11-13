@@ -8,133 +8,114 @@ import androidx.core.content.ContextCompat;
 import android.Manifest;
 import android.content.IntentSender;
 import android.content.pm.PackageManager;
-import android.location.Address;
-import android.location.Geocoder;
-import android.location.Location;
+import android.os.Build;
 import android.os.Bundle;
-import android.os.Looper;
+import android.view.View;
+import android.widget.Button;
 import android.widget.TextView;
+import android.widget.Toast;
 
 import com.example.trackingapplication.data.Database;
 import com.example.trackingapplication.data.TrackerDatabase;
-import com.google.android.gms.common.api.ResolvableApiException;
-import com.google.android.gms.location.FusedLocationProviderClient;
-import com.google.android.gms.location.LocationCallback;
-import com.google.android.gms.location.LocationRequest;
-import com.google.android.gms.location.LocationResult;
-import com.google.android.gms.location.LocationServices;
-import com.google.android.gms.location.LocationSettingsRequest;
-import com.google.android.gms.location.LocationSettingsResponse;
-import com.google.android.gms.location.Priority;
-import com.google.android.gms.location.SettingsClient;
-import com.google.android.gms.tasks.OnFailureListener;
-import com.google.android.gms.tasks.OnSuccessListener;
-import com.google.android.gms.tasks.Task;
+import com.example.trackingapplication.tracking.TrackingService;
 
-import java.io.IOException;
-import java.util.List;
-import java.util.Locale;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
+import java.text.DateFormat;
+import java.util.Date;
 
 /**
- * Tracks the signed-in user and stores the position in the on-device database
- * (no Firebase). A new fix is written immediately and then at most every 15 s.
+ * Start/stop screen for background tracking.
+ *
+ * The actual recording lives in {@link TrackingService} (a foreground service),
+ * so it keeps running after this screen — or the whole app — is closed, until
+ * the user presses "Stop tracking" here or in the notification.
  */
 public class LocationActivity extends AppCompatActivity {
 
     private static final int LOCATION_REQUEST_CODE = 10001;
-    private static final int LOCATION_SETTINGS_REQUEST_CODE = 1001;
+    private static final int NOTIFICATION_REQUEST_CODE = 10002;
 
-    /** Don't hit the disk on every single GPS tick. */
-    private static final long MIN_SAVE_INTERVAL_MS = 15_000L;
-
-    private FusedLocationProviderClient fusedLocationProviderClient;
-    private LocationRequest locationRequest;
     private TrackerDatabase db;
     private TextView statusText;
-
-    private long lastSavedAt = 0L;
-    private boolean hasSavedOnce = false;
-
-    /** Geocoding touches the network/disk, so keep it off the main thread. */
-    private final ExecutorService geocodeExecutor = Executors.newSingleThreadExecutor();
-
-    private final LocationCallback locationCallback = new LocationCallback() {
-        @Override
-        public void onLocationResult(@NonNull LocationResult locationResult) {
-            Location location = locationResult.getLastLocation();
-            if (location == null) {
-                return;
-            }
-
-            showPosition(location);
-
-            long now = System.currentTimeMillis();
-            if (!hasSavedOnce || now - lastSavedAt >= MIN_SAVE_INTERVAL_MS) {
-                hasSavedOnce = true;
-                lastSavedAt = now;
-                saveLocation(location);
-            }
-        }
-    };
+    private TextView savedText;
+    private Button toggleButton;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_location);
 
-        statusText = findViewById(R.id.statusText);
         db = Database.get(this);
-        fusedLocationProviderClient = LocationServices.getFusedLocationProviderClient(this);
+        statusText = findViewById(R.id.statusText);
+        savedText = findViewById(R.id.savedText);
+        toggleButton = findViewById(R.id.toggleTrackingBtn);
 
-        locationRequest = new LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, 4000L)
-                .setMinUpdateIntervalMillis(2000L)
-                .build();
+        toggleButton.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                if (TrackingService.isRunning(LocationActivity.this)) {
+                    TrackingService.stop(LocationActivity.this);
+                    refresh();
+                    Toast.makeText(LocationActivity.this,
+                            R.string.tracking_stopped, Toast.LENGTH_SHORT).show();
+                } else {
+                    startTracking();
+                }
+            }
+        });
+
+        Button back = findViewById(R.id.backBtn);
+        back.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                finish();
+            }
+        });
     }
 
     @Override
     protected void onStart() {
         super.onStart();
-        if (hasLocationPermission()) {
-            checkSettingsAndStartLocationUpdates();
-        } else {
-            askLocationPermission();
+        refresh();
+    }
+
+    // ------------------------------------------------------------------
+    // Start / stop
+    // ------------------------------------------------------------------
+
+    private void startTracking() {
+        if (!hasLocationPermission()) {
+            askForPermissions();
+            return;
         }
+        TrackingService.start(this);
+        refresh();
+        Toast.makeText(this, R.string.tracking_running, Toast.LENGTH_LONG).show();
     }
-
-    @Override
-    protected void onStop() {
-        super.onStop();
-        stopLocationUpdates();
-    }
-
-    @Override
-    protected void onDestroy() {
-        super.onDestroy();
-        geocodeExecutor.shutdown();
-    }
-
-    // ------------------------------------------------------------------
-    // Permissions / settings
-    // ------------------------------------------------------------------
 
     private boolean hasLocationPermission() {
         return ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION)
                 == PackageManager.PERMISSION_GRANTED;
     }
 
-    private void askLocationPermission() {
-        if (hasLocationPermission()) {
-            return;
+    private void askForPermissions() {
+        // Location (fine+coarse together, as Android 12+ requires). Notification
+        // permission is only relevant on Android 13+ and is asked in the same pass.
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            ActivityCompat.requestPermissions(this,
+                    new String[]{
+                            Manifest.permission.ACCESS_FINE_LOCATION,
+                            Manifest.permission.ACCESS_COARSE_LOCATION,
+                            Manifest.permission.POST_NOTIFICATIONS
+                    },
+                    LOCATION_REQUEST_CODE);
+        } else {
+            ActivityCompat.requestPermissions(this,
+                    new String[]{
+                            Manifest.permission.ACCESS_FINE_LOCATION,
+                            Manifest.permission.ACCESS_COARSE_LOCATION
+                    },
+                    LOCATION_REQUEST_CODE);
         }
-        // Android 12+ needs fine AND coarse to be requested together.
-        ActivityCompat.requestPermissions(this,
-                new String[]{
-                        Manifest.permission.ACCESS_FINE_LOCATION,
-                        Manifest.permission.ACCESS_COARSE_LOCATION
-                },
-                LOCATION_REQUEST_CODE);
     }
 
     @Override
@@ -145,133 +126,53 @@ public class LocationActivity extends AppCompatActivity {
 
         if (requestCode == LOCATION_REQUEST_CODE) {
             if (grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
-                checkSettingsAndStartLocationUpdates();
+                startTracking();
             } else {
-                setStatus("Location permission denied. Tracking cannot start.");
+                statusText.setText("Location permission denied. Tracking cannot start.");
             }
-        }
-    }
-
-    private void checkSettingsAndStartLocationUpdates() {
-        LocationSettingsRequest request = new LocationSettingsRequest.Builder()
-                .addLocationRequest(locationRequest)
-                .build();
-        SettingsClient client = LocationServices.getSettingsClient(this);
-
-        Task<LocationSettingsResponse> task = client.checkLocationSettings(request);
-
-        task.addOnSuccessListener(new OnSuccessListener<LocationSettingsResponse>() {
-            @Override
-            public void onSuccess(LocationSettingsResponse locationSettingsResponse) {
-                startLocationUpdates();
-            }
-        });
-
-        task.addOnFailureListener(new OnFailureListener() {
-            @Override
-            public void onFailure(@NonNull Exception e) {
-                if (e instanceof ResolvableApiException) {
-                    ResolvableApiException apiException = (ResolvableApiException) e;
-                    try {
-                        apiException.startResolutionForResult(
-                                LocationActivity.this, LOCATION_SETTINGS_REQUEST_CODE);
-                    } catch (IntentSender.SendIntentException ex) {
-                        setStatus("Could not open location settings: " + ex.getMessage());
-                    }
-                } else {
-                    setStatus("Location is not available on this device: " + e.getMessage());
-                }
-            }
-        });
-    }
-
-    private void startLocationUpdates() {
-        if (!hasLocationPermission()) {
-            return;
-        }
-        setStatus("Tracking… waiting for a GPS fix.");
-        fusedLocationProviderClient.requestLocationUpdates(
-                locationRequest, locationCallback, Looper.getMainLooper());
-    }
-
-    private void stopLocationUpdates() {
-        if (fusedLocationProviderClient != null) {
-            fusedLocationProviderClient.removeLocationUpdates(locationCallback);
         }
     }
 
     // ------------------------------------------------------------------
-    // Saving
+    // UI
     // ------------------------------------------------------------------
 
-    private void saveLocation(@NonNull final Location location) {
-        final TrackerDatabase.User user = db.currentUser();
-        if (user == null) {
-            setStatus("You are signed out — nothing to save.");
+    private void refresh() {
+        boolean running = TrackingService.isRunning(this);
+
+        toggleButton.setText(running
+                ? R.string.stop_background_tracking
+                : R.string.start_background_tracking);
+
+        statusText.setText(running
+                ? R.string.tracking_running
+                : R.string.tracking_stopped);
+
+        TrackerDatabase.User me = db.currentUser();
+        if (me == null) {
+            savedText.setText("You are signed out — nothing will be saved.");
             return;
         }
 
-        final double lat = location.getLatitude();
-        final double lng = location.getLongitude();
-
-        geocodeExecutor.execute(new Runnable() {
-            @Override
-            public void run() {
-                String address = resolveAddress(lat, lng);
-                db.saveLocation(user.email, lat, lng, address);
-
-                setStatus(String.format(Locale.US,
-                        "Saved %s\n%.5f, %.5f\n%s",
-                        user.email, lat, lng,
-                        address.isEmpty() ? "(no address)" : address));
-            }
-        });
-    }
-
-    /** Blocking geocoder call — always runs on {@link #geocodeExecutor}. */
-    private String resolveAddress(double latitude, double longitude) {
-        if (!Geocoder.isPresent()) {
-            return "";
+        TrackerDatabase.UserLocation location = db.locationFor(me.email);
+        if (location == null || !location.hasLocation()) {
+            savedText.setText(R.string.no_location_yet);
+            return;
         }
-        Geocoder geocoder = new Geocoder(LocationActivity.this, Locale.getDefault());
-        try {
-            @SuppressWarnings("deprecation")
-            List<Address> addresses = geocoder.getFromLocation(latitude, longitude, 1);
-            if (addresses == null || addresses.isEmpty()) {
-                return "";
-            }
-            Address returnAddress = addresses.get(0);
-            StringBuilder builder = new StringBuilder();
-            for (int i = 0; i <= returnAddress.getMaxAddressLineIndex(); i++) {
-                if (i > 0) {
-                    builder.append('\n');
-                }
-                builder.append(returnAddress.getAddressLine(i));
-            }
-            return builder.toString();
-        } catch (IllegalArgumentException | IOException e) {
-            // No geocoder backend, or network unavailable — coordinates are still saved.
-            return "";
+
+        String when = location.updatedAt != null
+                ? DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT)
+                .format(new Date(location.updatedAt))
+                : "unknown";
+
+        StringBuilder saved = new StringBuilder();
+        saved.append(String.format(java.util.Locale.US, "Last saved: %.5f, %.5f",
+                location.latitude, location.longitude));
+        if (location.address != null && !location.address.trim().isEmpty()) {
+            saved.append('\n').append(location.address);
         }
-    }
+        saved.append("\nUpdated ").append(when);
 
-    // ------------------------------------------------------------------
-    // UI helpers
-    // ------------------------------------------------------------------
-
-    private void showPosition(@NonNull Location location) {
-        setStatus(String.format(Locale.US, "Current position\n%.5f, %.5f",
-                location.getLatitude(), location.getLongitude()));
-    }
-
-    private void setStatus(final String message) {
-        runOnUiThread(new Runnable() {
-            @Override
-            public void run() {
-                if (statusText != null) {
-                    statusText.setText(message);
-                }
-            }
-        });
+        savedText.setText(saved.toString());
     }
 }

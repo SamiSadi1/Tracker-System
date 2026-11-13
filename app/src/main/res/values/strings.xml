@@ -4,6 +4,7 @@
     <string name="location_tracking">Location tracking</string>
     <string name="location_help_employee">Your position is stored on this device only.</string>
     <string name="tracking_active_while_open">Tracking is active while the tracking screen is open</string>
+    <string name="track_in_background">Track in the background</string>
     <string name="open_location_screen">Open tracking screen</string>
     <string name="waiting_for_gps">Waiting for a location fix…</string>
     <string name="admin_panel">Admin panel</string>
@@ -21,4 +22,13 @@
     <string name="send">Send</string>
     <string name="back">Back</string>
     <string name="open_messages">Messages</string>
+    <string name="tracking_channel_name">Location tracking</string>
+    <string name="tracking_channel_description">Keeps recording your position while tracking is on.</string>
+    <string name="tracking_notification_title">Tracking in progress</string>
+    <string name="tracking_notification_body">Your position is saved on this device. Tap Stop to end tracking.</string>
+    <string name="stop_tracking">Stop</string>
+    <string name="start_background_tracking">Start background tracking</string>
+    <string name="stop_background_tracking">Stop tracking</string>
+    <string name="tracking_running">Tracking runs in the background until you stop it.</string>
+    <string name="tracking_stopped">Tracking is off.</string>
 </resources>
