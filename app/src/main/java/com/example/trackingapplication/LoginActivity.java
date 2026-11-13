@@ -7,198 +7,127 @@ import androidx.appcompat.app.AppCompatActivity;
 import android.content.DialogInterface;
 import android.content.Intent;
 import android.os.Bundle;
-import android.util.Log;
 import android.view.View;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.Toast;
 
-import com.google.android.gms.tasks.OnFailureListener;
-import com.google.android.gms.tasks.OnSuccessListener;
-import com.google.firebase.auth.AuthResult;
-import com.google.firebase.auth.FirebaseAuth;
-import com.google.firebase.firestore.DocumentReference;
-import com.google.firebase.firestore.DocumentSnapshot;
-import com.google.firebase.firestore.FirebaseFirestore;
+import com.example.trackingapplication.data.TrackerDatabase;
 
+/** Sign-in screen. Backed by the on-device database (no Firebase). */
 public class LoginActivity extends AppCompatActivity {
 
-    EditText email,password;
-    Button loginBtn,gotoRegister;
-    FirebaseAuth fAuth;
-    FirebaseFirestore fstore;
-    boolean valid = true;
+    EditText email, password;
+    Button loginBtn, gotoRegister;
+    TrackerDatabase db;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_login);
 
+        db = com.example.trackingapplication.data.Database.get(this);
+
         email = findViewById(R.id.loginEmail);
         password = findViewById(R.id.loginPassword);
-        fAuth = FirebaseAuth.getInstance();
-        fstore = FirebaseFirestore.getInstance();
-
         loginBtn = findViewById(R.id.loginBtn);
         gotoRegister = findViewById(R.id.gotoRegister);
 
         loginBtn.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
-
-                checkField(email);
-                checkField(password);
-
-                if (valid){
-
-                    fAuth.signInWithEmailAndPassword(email.getText().toString(),password.getText().toString()).addOnSuccessListener(new OnSuccessListener<AuthResult>() {
-                        @Override
-                        public void onSuccess(AuthResult authResult) {
-
-                            Toast.makeText(LoginActivity.this, "Login Sucessfully", Toast.LENGTH_SHORT).show();
-                            checkUserAccesslevel(authResult.getUser().getEmail());
-
-
-                        }
-                    }).addOnFailureListener(new OnFailureListener() {
-                        @Override
-                        public void onFailure(@NonNull Exception e) {
-
-                            Toast.makeText(LoginActivity.this, "EORRR!!!!"+e.getMessage(), Toast.LENGTH_SHORT).show();
-
-                        }
-                    });
+                if (!checkField(email) || !checkField(password)) {
+                    return;
                 }
-
-            }
-        });
-    }
-    private void checkUserAccesslevel(String email) {
-
-        DocumentReference df = fstore.collection("Users").document(email);
-        df.get().addOnSuccessListener(new OnSuccessListener<DocumentSnapshot>() {
-            @Override
-            public void onSuccess(DocumentSnapshot documentSnapshot) {
-
-                Log.d("TAG","On success"+documentSnapshot.getData());
-                //identify the type of user
-                if (documentSnapshot.getString("isAdmin") != null) {
-                    //user is Admin
-                    startActivity(new Intent(getApplicationContext(), AdminActivity.class));
-                    finish();
-                }
-                if(documentSnapshot.getString("isUser") != null){
-                    //user is Client
-                    startActivity(new Intent(getApplicationContext(), MainActivity.class));
-                    finish();
+                try {
+                    TrackerDatabase.User user =
+                            db.login(email.getText().toString(), password.getText().toString());
+                    Toast.makeText(LoginActivity.this,
+                            "Login successful", Toast.LENGTH_SHORT).show();
+                    openHomeFor(user);
+                } catch (TrackerDatabase.LoginException e) {
+                    Toast.makeText(LoginActivity.this, e.getMessage(), Toast.LENGTH_LONG).show();
                 }
             }
         });
     }
-    public boolean checkField(EditText textField){
-        if(textField.getText().toString().isEmpty()){
-            textField.setError("Error");
-            valid = false;
-        }else {
-            valid = true;
-        }
 
-        return valid;
-    }
-
-    public void createaccount(View view) {
-
-        startActivity(new Intent(getApplicationContext(),RegisterActivity.class));
-        finish();
-    }
     @Override
     protected void onStart() {
         super.onStart();
-
-        if(FirebaseAuth.getInstance().getCurrentUser() != null){
-
-            // NOTE: RegisterActivity stores the profile under the user's e-mail
-            // (see RegisterActivity -> df = fstore.collection("Users").document(user.getEmail())),
-            // so the same key must be used here, otherwise signed-in users are never routed.
-            DocumentReference df = FirebaseFirestore.getInstance().collection("Users").document(FirebaseAuth.getInstance().getCurrentUser().getEmail());
-            df.get().addOnSuccessListener(new OnSuccessListener<DocumentSnapshot>() {
-                @Override
-                public void onSuccess(DocumentSnapshot documentSnapshot) {
-
-                    if(documentSnapshot.getString("isAdmin") != null){
-
-                        startActivity(new Intent(getApplicationContext(),AdminActivity.class));
-                        finish();
-                    }
-
-                    if(documentSnapshot.getString("isUser") != null){
-
-                        startActivity(new Intent(getApplicationContext(),MainActivity.class));
-                        finish();
-                    }
-
-                    if(documentSnapshot.getString("isAdmin") == null && documentSnapshot.getString("isUser") == null){
-                        // Signed in but no role stored (e.g. half-created profile) -> start clean.
-                        FirebaseAuth.getInstance().signOut();
-                    }
-
-                }
-            }).addOnFailureListener(new OnFailureListener() {
-                @Override
-                public void onFailure(@NonNull Exception e) {
-
-                    FirebaseAuth.getInstance().signOut();
-                    startActivity(new Intent(getApplicationContext(),LoginActivity.class));
-                    finish();
-
-                }
-            });
-
+        // Already signed in (session persists across launches) -> go straight to the home screen.
+        TrackerDatabase.User user = db.currentUser();
+        if (user != null) {
+            openHomeFor(user);
         }
     }
-    public void forgetpassword(View v) {
 
-
-        final EditText mailtext = new EditText(v.getContext());
-        final AlertDialog.Builder passwordreset = new AlertDialog.Builder(v.getContext());
-        passwordreset.setTitle("Reset password");
-        passwordreset.setMessage("ENTER FOR GMAIL FOR RESET FOR PASSWORD");
-        passwordreset.setView(mailtext);
-
-        passwordreset.setPositiveButton("YES", new DialogInterface.OnClickListener() {
-            @Override
-            public void onClick(DialogInterface dialog, int which) {
-
-                String resetmail = mailtext.getText().toString().trim();
-                fAuth.sendPasswordResetEmail(resetmail).addOnSuccessListener(new OnSuccessListener<Void>() {
-                    @Override
-                    public void onSuccess(Void aVoid) {
-
-                        Toast.makeText(LoginActivity.this, "Reset link sent your email!!!", Toast.LENGTH_SHORT).show();
-
-                    }
-                }).addOnFailureListener(new OnFailureListener() {
-                    @Override
-                    public void onFailure(@NonNull Exception e) {
-
-                        Toast.makeText(LoginActivity.this, "Error!!!Rest link not sent"+e.getMessage(), Toast.LENGTH_SHORT).show();
-
-                    }
-                });
-
-
-
-            }
-        });
-        passwordreset.setNegativeButton("NO", new DialogInterface.OnClickListener() {
-            @Override
-            public void onClick(DialogInterface dialog, int which) {
-
-            }
-        });
-
-        passwordreset.create().show();
+    private void openHomeFor(TrackerDatabase.User user) {
+        Class<?> home = user.isAdmin() ? AdminActivity.class : MainActivity.class;
+        startActivity(new Intent(getApplicationContext(), home));
+        finish();
     }
 
+    public boolean checkField(EditText textField) {
+        if (textField.getText().toString().trim().isEmpty()) {
+            textField.setError("Required");
+            return false;
+        }
+        textField.setError(null);
+        return true;
+    }
 
+    public void createaccount(View view) {
+        startActivity(new Intent(getApplicationContext(), RegisterActivity.class));
+        finish();
+    }
+
+    /**
+     * There is no mail server without a backend, so this asks for the e-mail and a
+     * new password directly and updates the local account.
+     */
+    public void forgetpassword(View v) {
+        final EditText resetMail = new EditText(v.getContext());
+        resetMail.setHint("Email Address");
+        final EditText newPassword = new EditText(v.getContext());
+        newPassword.setHint("New Password");
+
+        final android.widget.LinearLayout container = new android.widget.LinearLayout(v.getContext());
+        container.setOrientation(android.widget.LinearLayout.VERTICAL);
+        container.addView(resetMail);
+        container.addView(newPassword);
+
+        final AlertDialog.Builder builder = new AlertDialog.Builder(v.getContext());
+        builder.setTitle("Reset password");
+        builder.setMessage("Enter your e-mail and choose a new password.");
+        builder.setView(container);
+
+        builder.setPositiveButton("YES", new DialogInterface.OnClickListener() {
+            @Override
+            public void onClick(DialogInterface dialog, int which) {
+                String mail = resetMail.getText().toString().trim();
+                String pass = newPassword.getText().toString();
+                if (mail.isEmpty() || pass.isEmpty()) {
+                    Toast.makeText(LoginActivity.this,
+                            "E-mail and new password are required.", Toast.LENGTH_LONG).show();
+                    return;
+                }
+                if (db.resetPassword(mail, pass)) {
+                    Toast.makeText(LoginActivity.this,
+                            "Password updated. You can sign in now.", Toast.LENGTH_LONG).show();
+                } else {
+                    Toast.makeText(LoginActivity.this,
+                            "No account found for " + mail, Toast.LENGTH_LONG).show();
+                }
+            }
+        });
+        builder.setNegativeButton("NO", new DialogInterface.OnClickListener() {
+            @Override
+            public void onClick(DialogInterface dialog, int which) {
+                // dismissed
+            }
+        });
+
+        builder.create().show();
+    }
 }

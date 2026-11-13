@@ -52,16 +52,15 @@
         app:layout_constraintTop_toTopOf="@id/subtitle" />
 
     <TextView
-        android:id="@+id/errorText"
+        android:id="@+id/summaryText"
         android:layout_width="0dp"
         android:layout_height="wrap_content"
-        android:layout_marginTop="8dp"
-        android:textColor="#B00020"
-        android:visibility="gone"
+        android:layout_marginTop="4dp"
+        android:textSize="13sp"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toBottomOf="@id/subtitle"
-        tools:visibility="visible" />
+        tools:text="3 users • 2 with a saved position" />
 
     <TextView
         android:id="@+id/emptyText"
@@ -72,7 +71,7 @@
         android:visibility="gone"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toBottomOf="@id/errorText"
+        app:layout_constraintTop_toBottomOf="@id/summaryText"
         tools:visibility="visible" />
 
     <androidx.recyclerview.widget.RecyclerView
@@ -85,6 +84,6 @@
         app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toBottomOf="@id/errorText" />
+        app:layout_constraintTop_toBottomOf="@id/summaryText" />
 
 </androidx.constraintlayout.widget.ConstraintLayout>

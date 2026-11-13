@@ -8,48 +8,25 @@ import android.view.View;
 import android.view.ViewGroup;
 import android.widget.TextView;
 
-import com.google.firebase.firestore.DocumentSnapshot;
+import com.example.trackingapplication.data.TrackerDatabase;
 
 import java.text.DateFormat;
 import java.util.ArrayList;
 import java.util.Date;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
-import java.util.Map;
 
 /** Renders one row per user: profile details plus the last saved position. */
 public class UserAdapter extends RecyclerView.Adapter<UserAdapter.UserViewHolder> {
 
     private static final String NO_LOCATION_YET = "No location saved";
 
-    private final List<DocumentSnapshot> users = new ArrayList<>();
-    private final Map<String, DocumentSnapshot> locations = new HashMap<>();
+    private final List<TrackerDatabase.UserLocation> users = new ArrayList<>();
 
-    public void setUsers(List<DocumentSnapshot> newUsers) {
+    public void setUsers(List<TrackerDatabase.UserLocation> newUsers) {
         users.clear();
         users.addAll(newUsers);
-        // Drop locations for users that disappeared.
-        Map<String, DocumentSnapshot> kept = new HashMap<>();
-        for (DocumentSnapshot user : users) {
-            DocumentSnapshot location = locations.get(user.getId());
-            if (location != null) {
-                kept.put(user.getId(), location);
-            }
-        }
-        locations.clear();
-        locations.putAll(kept);
         notifyDataSetChanged();
-    }
-
-    public void setLocation(String uid, DocumentSnapshot location) {
-        locations.put(uid, location);
-        for (int i = 0; i < users.size(); i++) {
-            if (users.get(i).getId().equals(uid)) {
-                notifyItemChanged(i);
-                return;
-            }
-        }
     }
 
     @NonNull
@@ -62,44 +39,35 @@ public class UserAdapter extends RecyclerView.Adapter<UserAdapter.UserViewHolder
 
     @Override
     public void onBindViewHolder(@NonNull UserViewHolder holder, int position) {
-        DocumentSnapshot user = users.get(position);
-        DocumentSnapshot location = locations.get(user.getId());
+        TrackerDatabase.UserLocation entry = users.get(position);
+        TrackerDatabase.User user = entry.user;
 
-        String name = valueOr(user.getString("Name"), user.getId());
-        String email = valueOr(user.getString("E-mail"), "—");
-        String role = roleOf(user);
-        String department = valueOr(user.getString("Department"), "");
-
-        holder.name.setText(name);
-        holder.email.setText(email);
+        holder.name.setText(valueOr(user.name, user.email));
+        holder.email.setText(valueOr(user.email, "—"));
 
         StringBuilder details = new StringBuilder();
-        details.append(role);
+        details.append(user.isAdmin() ? "Admin" : "Employee");
+        String department = valueOr(user.department, "");
         if (!department.isEmpty()) {
             details.append(" • ").append(department);
         }
         holder.role.setText(details.toString());
 
-        if (location != null && location.exists()) {
-            Double lat = location.getDouble("Latitude");
-            Double lng = location.getDouble("Longitude");
-            String address = valueOr(location.getString("Address"), "");
-
+        if (entry.hasLocation()) {
             StringBuilder detailsText = new StringBuilder();
-            if (lat != null && lng != null) {
-                detailsText.append(String.format(Locale.US, "%.5f, %.5f", lat, lng));
-            } else {
-                detailsText.append("Position unavailable");
-            }
+            detailsText.append(String.format(Locale.US, "%.5f, %.5f",
+                    entry.latitude, entry.longitude));
+
+            String address = valueOr(entry.address, "");
             if (!address.isEmpty()) {
                 detailsText.append('\n').append(address);
             }
 
-            Date updated = location.getDate("Updated");
-            if (updated != null) {
+            if (entry.updatedAt != null) {
                 detailsText.append("\nUpdated ")
                         .append(DateFormat.getDateTimeInstance(
-                                DateFormat.MEDIUM, DateFormat.SHORT).format(updated));
+                                DateFormat.MEDIUM, DateFormat.SHORT)
+                                .format(new Date(entry.updatedAt)));
             }
 
             holder.location.setText(detailsText.toString());
@@ -111,16 +79,6 @@ public class UserAdapter extends RecyclerView.Adapter<UserAdapter.UserViewHolder
     @Override
     public int getItemCount() {
         return users.size();
-    }
-
-    private static String roleOf(DocumentSnapshot user) {
-        if (user.getString("isAdmin") != null) {
-            return "Admin";
-        }
-        if (user.getString("isUser") != null) {
-            return "Employee";
-        }
-        return "No role";
     }
 
     private static String valueOr(String value, String fallback) {

@@ -1,6 +1,5 @@
 package com.example.trackingapplication;
 
-import androidx.annotation.NonNull;
 import androidx.appcompat.app.AppCompatActivity;
 
 import android.content.Intent;
@@ -12,35 +11,22 @@ import android.widget.CompoundButton;
 import android.widget.EditText;
 import android.widget.Toast;
 
-import com.google.android.gms.tasks.OnFailureListener;
-import com.google.android.gms.tasks.OnSuccessListener;
-import com.google.firebase.Timestamp;
-import com.google.firebase.auth.AuthResult;
-import com.google.firebase.auth.FirebaseAuth;
-import com.google.firebase.auth.FirebaseUser;
-import com.google.firebase.firestore.DocumentReference;
-import com.google.firebase.firestore.FirebaseFirestore;
+import com.example.trackingapplication.data.TrackerDatabase;
 
-import java.util.Date;
-import java.util.HashMap;
-import java.util.Map;
-
+/** Registration screen. Backed by the on-device database (no Firebase). */
 public class RegisterActivity extends AppCompatActivity {
 
-    EditText fullName,email,password,phone,department;
-    Button registerBtn,goToLogin;
-    boolean valid = true;
-    FirebaseAuth fAuth;
-    FirebaseFirestore fstore;
-    CheckBox isAdmin,isUser;
+    EditText fullName, email, password, phone, department;
+    Button registerBtn, goToLogin;
+    CheckBox isAdmin, isUser;
+    TrackerDatabase db;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_register);
 
-        fAuth = FirebaseAuth.getInstance();
-        fstore = FirebaseFirestore.getInstance();
+        db = com.example.trackingapplication.data.Database.get(this);
 
         fullName = findViewById(R.id.registerName);
         email = findViewById(R.id.registerEmail);
@@ -55,8 +41,7 @@ public class RegisterActivity extends AppCompatActivity {
         isUser.setOnCheckedChangeListener(new CompoundButton.OnCheckedChangeListener() {
             @Override
             public void onCheckedChanged(CompoundButton buttonView, boolean isChecked) {
-                if (buttonView.isChecked()){
-
+                if (buttonView.isChecked()) {
                     isAdmin.setChecked(false);
                 }
             }
@@ -65,8 +50,7 @@ public class RegisterActivity extends AppCompatActivity {
         isAdmin.setOnCheckedChangeListener(new CompoundButton.OnCheckedChangeListener() {
             @Override
             public void onCheckedChanged(CompoundButton buttonView, boolean isChecked) {
-                if (buttonView.isChecked()){
-
+                if (buttonView.isChecked()) {
                     isUser.setChecked(false);
                 }
             }
@@ -75,70 +59,42 @@ public class RegisterActivity extends AppCompatActivity {
         registerBtn.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
-                // Validate every field. checkField() used to overwrite the shared `valid`
-                // flag on each call, so one non-empty field made the whole form pass.
-                boolean fieldsValid = checkField(fullName) & checkField(email)
-                        & checkField(password) & checkField(phone) & checkField(department);
-
-                if (!(isAdmin.isChecked() || isUser.isChecked())){
-
-                    Toast.makeText(RegisterActivity.this, "Select your Account type", Toast.LENGTH_SHORT).show();
+                if (!(isAdmin.isChecked() || isUser.isChecked())) {
+                    Toast.makeText(RegisterActivity.this,
+                            "Select your Account type", Toast.LENGTH_SHORT).show();
                     return;
                 }
 
-                if (fieldsValid){
+                boolean fieldsValid = checkField(fullName) & checkField(email)
+                        & checkField(password) & checkField(phone) & checkField(department);
+                if (!fieldsValid) {
+                    return;
+                }
 
-                    fAuth.createUserWithEmailAndPassword(email.getText().toString(),password.getText().toString()).addOnSuccessListener(new OnSuccessListener<AuthResult>() {
-                        @Override
-                        public void onSuccess(AuthResult authResult) {
+                String role = isAdmin.isChecked()
+                        ? TrackerDatabase.ROLE_ADMIN
+                        : TrackerDatabase.ROLE_EMPLOYEE;
 
+                try {
+                    TrackerDatabase.User user = db.register(
+                            fullName.getText().toString(),
+                            email.getText().toString(),
+                            password.getText().toString(),
+                            department.getText().toString(),
+                            phone.getText().toString(),
+                            role);
 
-                            FirebaseUser user = fAuth.getCurrentUser();
-                            Toast.makeText(RegisterActivity.this, "Account Create Successfully", Toast.LENGTH_SHORT).show();
-                            final String profileKey = user.getEmail() != null ? user.getEmail() : user.getUid();
-                            DocumentReference df = fstore.collection("Users").document(profileKey);
-                            Map<String,Object> userinfo = new HashMap<>();
-                            userinfo.put("Name",fullName.getText().toString());
-                            userinfo.put("E-mail",email.getText().toString());
-                            userinfo.put("Department",department.getText().toString());
-                            userinfo.put("ContactNo",phone.getText().toString());
+                    Toast.makeText(RegisterActivity.this,
+                            "Account created successfully", Toast.LENGTH_SHORT).show();
 
+                    Class<?> home = user.isAdmin() ? AdminActivity.class : MainActivity.class;
+                    startActivity(new Intent(getApplicationContext(), home));
+                    finish();
 
-                            if (isAdmin.isChecked()){
-
-                                userinfo.put("isAdmin","1");
-                            }
-
-                            if (isUser.isChecked()){
-
-                                userinfo.put("isUser","1");
-                            }
-                            userinfo.put("Created",new Timestamp(new Date()));
-
-                            df.set(userinfo);
-
-                            if (isAdmin.isChecked()){
-
-                                startActivity(new Intent(getApplicationContext(),AdminActivity.class));
-                                finish();
-                            }
-
-                            if (isUser.isChecked()){
-
-                                startActivity(new Intent(getApplicationContext(),LoginActivity.class));
-                                finish();
-                            }
-
-
-                        }
-                    }).addOnFailureListener(new OnFailureListener() {
-                        @Override
-                        public void onFailure(@NonNull Exception e) {
-                            Toast.makeText(RegisterActivity.this, "Account Create unsuccessfully"+e.getMessage(), Toast.LENGTH_SHORT).show();
-                        }
-                    });
-
-
+                } catch (TrackerDatabase.RegistrationException e) {
+                    email.setError(e.getMessage());
+                    Toast.makeText(RegisterActivity.this,
+                            e.getMessage(), Toast.LENGTH_LONG).show();
                 }
             }
         });
@@ -146,16 +102,16 @@ public class RegisterActivity extends AppCompatActivity {
         goToLogin.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
-
-                startActivity(new Intent(getApplicationContext(),LoginActivity.class));
+                startActivity(new Intent(getApplicationContext(), LoginActivity.class));
                 finish();
             }
         });
     }
-    public boolean checkField(EditText textField){
-        if(textField.getText().toString().trim().isEmpty()){
+
+    /** Validates one field; every field is checked, nothing is overwritten. */
+    public boolean checkField(EditText textField) {
+        if (textField.getText().toString().trim().isEmpty()) {
             textField.setError("Error");
-            valid = false;
             return false;
         }
         textField.setError(null);

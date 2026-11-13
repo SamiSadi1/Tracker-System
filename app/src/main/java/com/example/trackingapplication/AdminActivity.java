@@ -10,37 +10,45 @@ import android.os.Bundle;
 import android.view.View;
 import android.widget.Button;
 import android.widget.TextView;
-import android.widget.Toast;
 
-import com.google.android.gms.tasks.OnFailureListener;
-import com.google.android.gms.tasks.OnSuccessListener;
-import com.google.firebase.auth.FirebaseAuth;
-import com.google.firebase.firestore.DocumentSnapshot;
-import com.google.firebase.firestore.FirebaseFirestore;
-import com.google.firebase.firestore.QuerySnapshot;
+import com.example.trackingapplication.data.Database;
+import com.example.trackingapplication.data.TrackerDatabase;
 
 import java.util.List;
 
 /**
  * Admin screen: lists every registered user and the last position each one
- * saved to Firestore -> Location/{uid}.
+ * saved to the on-device database (no Firebase).
  */
 public class AdminActivity extends AppCompatActivity {
 
-    private FirebaseFirestore fstore;
+    private TrackerDatabase db;
     private UserAdapter adapter;
+    private TextView summaryText;
     private TextView emptyText;
-    private TextView errorText;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_admin);
 
-        fstore = FirebaseFirestore.getInstance();
+        db = Database.get(this);
 
+        TrackerDatabase.User currentUser = db.currentUser();
+        if (currentUser == null) {
+            startActivity(new Intent(getApplicationContext(), LoginActivity.class));
+            finish();
+            return;
+        }
+        if (!currentUser.isAdmin()) {
+            // Employees have no business on the admin screen.
+            startActivity(new Intent(getApplicationContext(), MainActivity.class));
+            finish();
+            return;
+        }
+
+        summaryText = findViewById(R.id.summaryText);
         emptyText = findViewById(R.id.emptyText);
-        errorText = findViewById(R.id.errorText);
 
         adapter = new UserAdapter();
         RecyclerView recyclerView = findViewById(R.id.userList);
@@ -59,13 +67,11 @@ public class AdminActivity extends AppCompatActivity {
         signOut.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
-                FirebaseAuth.getInstance().signOut();
+                db.signOut();
                 startActivity(new Intent(getApplicationContext(), LoginActivity.class));
                 finish();
             }
         });
-
-        loadUsers();
     }
 
     @Override
@@ -75,58 +81,18 @@ public class AdminActivity extends AppCompatActivity {
     }
 
     private void loadUsers() {
-        showError(null);
+        List<TrackerDatabase.UserLocation> users = db.usersWithLocations();
 
-        fstore.collection("Users").get()
-                .addOnSuccessListener(new OnSuccessListener<QuerySnapshot>() {
-                    @Override
-                    public void onSuccess(QuerySnapshot snapshots) {
-                        final List<DocumentSnapshot> users = snapshots.getDocuments();
-                        adapter.setUsers(users);
-                        emptyText.setVisibility(users.isEmpty() ? View.VISIBLE : View.GONE);
-                        loadLocations(users);
-                    }
-                })
-                .addOnFailureListener(new OnFailureListener() {
-                    @Override
-                    public void onFailure(@NonNull Exception e) {
-                        showError("Could not load users: " + e.getMessage());
-                    }
-                });
-    }
+        adapter.setUsers(users);
 
-    /** Loads Location/{uid} for every user currently listed. */
-    private void loadLocations(List<DocumentSnapshot> users) {
-        for (final DocumentSnapshot user : users) {
-            final String uid = user.getId();
-            fstore.collection("Location").document(uid).get()
-                    .addOnSuccessListener(new OnSuccessListener<DocumentSnapshot>() {
-                        @Override
-                        public void onSuccess(DocumentSnapshot location) {
-                            if (location.exists()) {
-                                adapter.setLocation(uid, location);
-                            }
-                        }
-                    })
-                    .addOnFailureListener(new OnFailureListener() {
-                        @Override
-                        public void onFailure(@NonNull Exception e) {
-                            showError("Could not load location for " + uid + ": " + e.getMessage());
-                        }
-                    });
-        }
-    }
+        emptyText.setVisibility(users.isEmpty() ? View.VISIBLE : View.GONE);
 
-    private void showError(String message) {
-        if (errorText == null) {
-            return;
+        int located = 0;
+        for (TrackerDatabase.UserLocation user : users) {
+            if (user.hasLocation()) {
+                located++;
+            }
         }
-        if (message == null) {
-            errorText.setVisibility(View.GONE);
-        } else {
-            errorText.setText(message);
-            errorText.setVisibility(View.VISIBLE);
-            Toast.makeText(this, message, Toast.LENGTH_LONG).show();
-        }
+        summaryText.setText(users.size() + " users • " + located + " with a saved position");
     }
 }

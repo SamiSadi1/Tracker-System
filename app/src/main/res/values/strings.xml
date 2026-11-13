@@ -2,6 +2,9 @@
     <string name="app_name">TrackingApplication</string>
     <string name="location">Location</string>
     <string name="location_tracking">Location tracking</string>
+    <string name="location_help_employee">Your position is stored on this device only.</string>
+    <string name="tracking_active_while_open">Tracking is active while the tracking screen is open</string>
+    <string name="open_location_screen">Open tracking screen</string>
     <string name="waiting_for_gps">Waiting for a location fix…</string>
     <string name="admin_panel">Admin panel</string>
     <string name="registered_users">Registered users</string>

@@ -1,7 +1,6 @@
 package com.example.trackingapplication;
 
 import androidx.annotation.NonNull;
-import androidx.annotation.Nullable;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.app.ActivityCompat;
 import androidx.core.content.ContextCompat;
@@ -15,8 +14,9 @@ import android.location.Location;
 import android.os.Bundle;
 import android.os.Looper;
 import android.widget.TextView;
-import android.widget.Toast;
 
+import com.example.trackingapplication.data.Database;
+import com.example.trackingapplication.data.TrackerDatabase;
 import com.google.android.gms.common.api.ResolvableApiException;
 import com.google.android.gms.location.FusedLocationProviderClient;
 import com.google.android.gms.location.LocationCallback;
@@ -30,40 +30,28 @@ import com.google.android.gms.location.SettingsClient;
 import com.google.android.gms.tasks.OnFailureListener;
 import com.google.android.gms.tasks.OnSuccessListener;
 import com.google.android.gms.tasks.Task;
-import com.google.firebase.auth.FirebaseAuth;
-import com.google.firebase.auth.FirebaseUser;
-import com.google.firebase.firestore.FieldValue;
-import com.google.firebase.firestore.FirebaseFirestore;
 
 import java.io.IOException;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
-import java.util.Map;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 /**
- * Tracks the signed-in user and writes the position to
- * Firestore -> Location/{uid}  (see README / firestore.rules).
- *
- * The previous version of this class never saved anything: the method that wrote
- * to Firestore was commented out at both call sites and the live-update callback
- * only logged to Logcat. Saving now happens straight from the location callback.
+ * Tracks the signed-in user and stores the position in the on-device database
+ * (no Firebase). A new fix is written immediately and then at most every 15 s.
  */
 public class LocationActivity extends AppCompatActivity {
-
-    private static final String TAG = "LocationActivity";
 
     private static final int LOCATION_REQUEST_CODE = 10001;
     private static final int LOCATION_SETTINGS_REQUEST_CODE = 1001;
 
-    /** Don't hammer Firestore: persist at most once every 15 seconds. */
+    /** Don't hit the disk on every single GPS tick. */
     private static final long MIN_SAVE_INTERVAL_MS = 15_000L;
 
     private FusedLocationProviderClient fusedLocationProviderClient;
     private LocationRequest locationRequest;
-    private FirebaseFirestore fstore;
+    private TrackerDatabase db;
     private TextView statusText;
 
     private long lastSavedAt = 0L;
@@ -97,7 +85,7 @@ public class LocationActivity extends AppCompatActivity {
         setContentView(R.layout.activity_location);
 
         statusText = findViewById(R.id.statusText);
-        fstore = FirebaseFirestore.getInstance();
+        db = Database.get(this);
         fusedLocationProviderClient = LocationServices.getFusedLocationProviderClient(this);
 
         locationRequest = new LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, 4000L)
@@ -140,8 +128,7 @@ public class LocationActivity extends AppCompatActivity {
         if (hasLocationPermission()) {
             return;
         }
-        // Android 12+ needs fine AND coarse to be requested together, otherwise the
-        // user is only offered "approximate".
+        // Android 12+ needs fine AND coarse to be requested together.
         ActivityCompat.requestPermissions(this,
                 new String[]{
                         Manifest.permission.ACCESS_FINE_LOCATION,
@@ -171,18 +158,16 @@ public class LocationActivity extends AppCompatActivity {
                 .build();
         SettingsClient client = LocationServices.getSettingsClient(this);
 
-        Task<LocationSettingsResponse> locationSettingsResponseTask =
-                client.checkLocationSettings(request);
+        Task<LocationSettingsResponse> task = client.checkLocationSettings(request);
 
-        locationSettingsResponseTask.addOnSuccessListener(
-                new OnSuccessListener<LocationSettingsResponse>() {
-                    @Override
-                    public void onSuccess(LocationSettingsResponse locationSettingsResponse) {
-                        startLocationUpdates();
-                    }
-                });
+        task.addOnSuccessListener(new OnSuccessListener<LocationSettingsResponse>() {
+            @Override
+            public void onSuccess(LocationSettingsResponse locationSettingsResponse) {
+                startLocationUpdates();
+            }
+        });
 
-        locationSettingsResponseTask.addOnFailureListener(new OnFailureListener() {
+        task.addOnFailureListener(new OnFailureListener() {
             @Override
             public void onFailure(@NonNull Exception e) {
                 if (e instanceof ResolvableApiException) {
@@ -216,50 +201,29 @@ public class LocationActivity extends AppCompatActivity {
     }
 
     // ------------------------------------------------------------------
-    // Saving to Firestore
+    // Saving
     // ------------------------------------------------------------------
 
     private void saveLocation(@NonNull final Location location) {
-        final FirebaseUser user = FirebaseAuth.getInstance().getCurrentUser();
+        final TrackerDatabase.User user = db.currentUser();
         if (user == null) {
             setStatus("You are signed out — nothing to save.");
             return;
         }
 
-        final String uid = user.getUid();
-        final String email = user.getEmail();
         final double lat = location.getLatitude();
         final double lng = location.getLongitude();
 
         geocodeExecutor.execute(new Runnable() {
             @Override
             public void run() {
-                final String address = resolveAddress(lat, lng);
+                String address = resolveAddress(lat, lng);
+                db.saveLocation(user.email, lat, lng, address);
 
-                Map<String, Object> data = new HashMap<>();
-                data.put("Uid", uid);
-                data.put("E-mail", email);
-                data.put("Latitude", lat);
-                data.put("Longitude", lng);
-                data.put("Address", address);
-                data.put("Updated", FieldValue.serverTimestamp());
-
-                fstore.collection("Location").document(uid).set(data)
-                        .addOnSuccessListener(new OnSuccessListener<Void>() {
-                            @Override
-                            public void onSuccess(Void unused) {
-                                setStatus(String.format(Locale.US,
-                                        "Saved %s\n%.5f, %.5f\n%s",
-                                        email, lat, lng,
-                                        address.isEmpty() ? "(no address)" : address));
-                            }
-                        })
-                        .addOnFailureListener(new OnFailureListener() {
-                            @Override
-                            public void onFailure(@NonNull Exception e) {
-                                setStatus("Could not save location: " + e.getMessage());
-                            }
-                        });
+                setStatus(String.format(Locale.US,
+                        "Saved %s\n%.5f, %.5f\n%s",
+                        user.email, lat, lng,
+                        address.isEmpty() ? "(no address)" : address));
             }
         });
     }

@@ -1,9 +1,8 @@
 # Tracker-System — running the app
 
-> **Firebase is not "done" by building the app.** The code is wired for Firebase
-> project `tracking-9a64f`, but two settings live in the Firebase console and can
-> only be done by the project owner: **enable Email/Password auth** and **publish
-> `firestore.rules`**. Until then sign-in/registration fail and nothing is saved.
+> **No Firebase, no setup.** This app now stores everything in an on-device
+> SQLite database, so it works the moment you install the APK: no Firebase
+> project, no `google-services.json`, no API keys, no console steps, no network.
 
 ## 1. Build
 
@@ -13,56 +12,66 @@ or build locally with Android Studio (JDK 17) / `./gradlew assembleDebug`.
 
 Result: `app/build/outputs/apk/debug/app-debug.apk`
 
-## 2. Firebase setup (required — the app talks to Firebase Auth + Firestore)
+## 2. Install and use
 
-The repo ships with `google-services.json` for project **`tracking-9a64f`**.
-If you use your own project, replace `app/google-services.json` with yours and
-make sure the package name is still `com.example.trackingapplication`.
+1. Install the APK and open the app → the **Login** screen.
+2. Tap **Create Account**, fill in the fields, tick *Admin* or *Employee*.
+3. As an employee, tap **Open tracking screen** and allow location access —
+   the position is written immediately, then at most every 15 seconds.
+4. Sign out, register an *Admin* account, sign in as that admin → the admin
+   panel lists every registered user and their last saved position.
 
-### Enable these in the Firebase console
+No internet connection is required at any point.
 
-| Product | Setting |
-|---|---|
-| Authentication | Sign-in method → **Email/Password → Enable** |
-| Firestore Database | Create the database (production or test mode) |
-| Firestore → Rules | Paste `firestore.rules` from this repo and **Publish** |
+## 3. Where the data lives
 
-The rules are also deployable from this repo (the project id is already set in
-`.firebaserc`):
+`tracker.db` (SQLite), in the app's private storage:
 
-```bash
-npm i -g firebase-tools
-firebase login
-firebase deploy --only firestore:rules     # uses firebase.json + firestore.rules
+```sql
+Users     (email PK, name, department, phone, role, passwordSalt, passwordHash, createdAt)
+Locations (email PK, latitude, longitude, address, updatedAt)
+Session   (id=1, email)          -- keeps you signed in between launches
 ```
 
-> Without the rules in step 2 the app looks broken: the default rules deny every
-> read and write, so saving a location and loading the admin list both fail.
-
-## 3. What works
-
-| Screen | Behaviour |
-|---|---|
-| `LoginActivity` (launcher) | Email/password sign-in, "forget password" sends a reset mail, signed-in users are routed by their stored role |
-| `RegisterActivity` | Creates the account, stores the profile in `Users/{email}`, choose Admin or Employee |
-| `MainActivity` (employee) | Tap **Location** to start tracking; **Sign out** |
-| `LocationActivity` | Requests permission, then saves your position to `Location/{uid}` immediately and then at most every 15 s (lat/lng + resolved address + server timestamp) |
-| `AdminActivity` | Lists every registered user with role, department and their last saved position; **Refresh**, **Sign out** |
+Passwords are stored as salted, 10 000-round iterated SHA-256 hashes — never in
+plain text. `Session` holds the currently signed-in e-mail.
 
 ## 4. Permissions
 
-`INTERNET`, `ACCESS_FINE_LOCATION`, `ACCESS_COARSE_LOCATION` (both are requested
-together, as Android 12+ requires).
+`ACCESS_FINE_LOCATION`, `ACCESS_COARSE_LOCATION` (both requested together, as
+Android 12+ requires). `INTERNET` is no longer needed by the app logic; it is
+still declared only because Google Play services may use it for the geocoder.
 
-Tracking only runs while `LocationActivity` is open (`onStart` → `onStop`).
-For background tracking you would need a foreground service — not implemented.
+Tracking runs while the tracking screen is open (`onStart` → `onStop`).
+True background tracking needs a foreground service — not implemented.
 
-## 5. Firestore data model
+## 5. Why this instead of Firebase
 
-```
-Users/{email}    Name, E-mail, Department, ContactNo, isAdmin?/isUser?, Created
-Location/{uid}   Uid, E-mail, Latitude, Longitude, Address, Updated (serverTimestamp)
-```
+Firebase needs a live project with Email/Password auth enabled and security rules
+published before anything works, and it only works online with a valid
+`google-services.json`. The app previously shipped one from 2021, so whether it
+still worked was unknowable. SQLite removes that whole class of failure.
 
-Profiles are keyed by **e-mail** (registration and login both use that key), positions
-are keyed by **uid**.
+Trade-off: data is **per device**. Two phones do not share one admin view — the
+admin sees only the accounts registered on that same device. If you need real
+multi-device tracking later, the cleanest options are:
+
+| Option | Setup | Verdict |
+|---|---|---|
+| Supabase (Postgres + REST) | free project, anon key, no console toggles | easiest swap, keeps the same repository pattern |
+| Firebase again | enable Email/Password + publish rules | works, but back to the console |
+| Your own REST backend | you run it | most control, most work |
+
+The data layer is isolated in `data/TrackerDatabase.java` + `data/Database.java`,
+so replacing the storage engine only touches those two files and the activities'
+call sites.
+
+## 6. Keyboard shortcuts for maintainers
+
+| File | Role |
+|---|---|
+| `data/TrackerDatabase.java` | schema, accounts, sessions, positions |
+| `data/Database.java` | single accessor for the database |
+| `LoginActivity` / `RegisterActivity` | local sign-in / sign-up |
+| `LocationActivity` | GPS + reverse geocoding + saving |
+| `AdminActivity` + `UserAdapter` | admin list |
