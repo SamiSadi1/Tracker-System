@@ -71,7 +71,16 @@ jobs:
           done
 
       - name: Run unit tests
-        run: ./gradlew --no-daemon testDebugUnitTest
+        run: |
+          set -o pipefail
+          ./gradlew --no-daemon --console=plain testDebugUnitTest 2>&1 | tee /tmp/test.log
+
+      - name: Report test failures
+        if: failure()
+        run: |
+          grep -E "FAILED|AssertionError|expected:|error:" /tmp/test.log | head -40 | while IFS= read -r line; do
+            echo "::error title=Test::$line"
+          done
 
       - name: Upload debug APK
         uses: actions/upload-artifact@v4

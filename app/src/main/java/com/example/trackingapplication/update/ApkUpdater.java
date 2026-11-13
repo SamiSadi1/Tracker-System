@@ -53,8 +53,16 @@ public final class ApkUpdater {
 
     private static final String APK_ASSET_NAME = "TrackerSystem-debug.apk";
 
+    /**
+     * Matches both JSON fields and plain release notes. GitHub release bodies are
+     * shipped as "versionCode: N" (unquoted, inside a JSON string), so the quotes
+     * must be optional. The release title "… — build N" is the fallback.
+     */
     private static final Pattern VERSION_CODE_PATTERN =
-            Pattern.compile("\"versionCode\"\\s*:\\s*(\\d+)");
+            Pattern.compile("\\bversionCode\\b\"?\\s*[:=]\\s*(\\d+)", Pattern.CASE_INSENSITIVE);
+
+    private static final Pattern BUILD_NUMBER_PATTERN =
+            Pattern.compile("\\bbuild\\s+(\\d+)\\b", Pattern.CASE_INSENSITIVE);
 
     private static final long CONNECT_TIMEOUT_SECONDS = 15L;
     private static final long READ_TIMEOUT_SECONDS = 120L;
@@ -305,13 +313,28 @@ public final class ApkUpdater {
     static int parseVersionCode(String releaseJson) {
         Matcher matcher = VERSION_CODE_PATTERN.matcher(releaseJson);
         if (matcher.find()) {
-            try {
-                return Integer.parseInt(matcher.group(1));
-            } catch (NumberFormatException ignored) {
-                // fall through
+            int parsed = toInt(matcher.group(1));
+            if (parsed > 0) {
+                return parsed;
+            }
+        }
+        // Fallback: the release title is "Tracker System — build N".
+        Matcher build = BUILD_NUMBER_PATTERN.matcher(releaseJson);
+        if (build.find()) {
+            int parsed = toInt(build.group(1));
+            if (parsed > 0) {
+                return parsed;
             }
         }
         return 0;
+    }
+
+    private static int toInt(String value) {
+        try {
+            return Integer.parseInt(value);
+        } catch (NumberFormatException e) {
+            return 0;
+        }
     }
 
     private void postError(final Listener listener, final String message) {

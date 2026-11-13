@@ -8,10 +8,11 @@ import org.junit.Test;
 /** Pure-Java checks for reading a GitHub release payload (no Android involved). */
 public class ApkUpdaterParsingTest {
 
+    /** Shaped like the real API payload: notes are a JSON string, so unquoted. */
     private static final String RELEASE_JSON =
             "{\"tag_name\":\"debug-latest\"," +
             "\"name\":\"Tracker System — build 87\"," +
-            "\"body\":\"versionCode: 87 (used by the in-app updater)\"," +
+            "\"body\":\"Direct APK download\\nversionCode: 87 (used by the in-app updater)\"," +
             "\"assets\":[{" +
             "\"name\":\"TrackerSystem-debug.apk\"," +
             "\"state\":\"uploaded\"," +
@@ -26,8 +27,19 @@ public class ApkUpdaterParsingTest {
     }
 
     @Test
-    public void readsThePublishedVersionCode() {
+    public void readsVersionCodeFromReleaseNotes() {
         assertEquals(87, ApkUpdater.parseVersionCode(RELEASE_JSON));
+    }
+
+    @Test
+    public void readsVersionCodeFromQuotedJsonField() {
+        assertEquals(42, ApkUpdater.parseVersionCode("{\"versionCode\": 42}"));
+    }
+
+    @Test
+    public void fallsBackToTheBuildNumberInTheTitle() {
+        assertEquals(99, ApkUpdater.parseVersionCode(
+                "{\"name\":\"Tracker System — build 99\",\"body\":\"no version here\"}"));
     }
 
     @Test
