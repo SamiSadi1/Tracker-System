@@ -85,24 +85,24 @@ public class UserAdapter extends RecyclerView.Adapter<UserAdapter.UserViewHolder
             Double lng = location.getDouble("Longitude");
             String address = valueOr(location.getString("Address"), "");
 
-            StringBuilder position = new StringBuilder();
+            StringBuilder detailsText = new StringBuilder();
             if (lat != null && lng != null) {
-                position.append(String.format(Locale.US, "%.5f, %.5f", lat, lng));
+                detailsText.append(String.format(Locale.US, "%.5f, %.5f", lat, lng));
             } else {
-                position.append("Position unavailable");
+                detailsText.append("Position unavailable");
             }
             if (!address.isEmpty()) {
-                position.append('\n').append(address);
+                detailsText.append('\n').append(address);
             }
 
             Date updated = location.getDate("Updated");
             if (updated != null) {
-                position.append("\nUpdated ")
+                detailsText.append("\nUpdated ")
                         .append(DateFormat.getDateTimeInstance(
                                 DateFormat.MEDIUM, DateFormat.SHORT).format(updated));
             }
 
-            holder.location.setText(position.toString());
+            holder.location.setText(detailsText.toString());
         } else {
             holder.location.setText(NO_LOCATION_YET);
         }
