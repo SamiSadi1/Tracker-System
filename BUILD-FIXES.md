@@ -120,3 +120,36 @@ the live-update callback only logged to Logcat. `AdminActivity` was an empty
 
 **Key consistency:** profiles are keyed by e-mail (`Users/{email}`), positions by
 uid (`Location/{uid}`) — writer and reader both use uid, verified.
+
+
+## 7. Firebase removed — replaced by on-device SQLite
+
+Firebase could not be made "okay" from the repository: it needs a live project
+with Email/Password enabled and security rules published, and the shipped
+`google-services.json` dated from 2021. Rather than depend on that, the storage
+layer was replaced with SQLite so the app works immediately after install.
+
+**Deleted:** `app/google-services.json`, `app/.json`, `firestore.rules`,
+`firebase.json`, `.firebaserc`, the `google-services` Gradle plugin and the
+`firebase-auth` / `firebase-firestore` dependencies. `grep -ri firebase` on the
+sources now returns nothing.
+
+**Added:** `data/TrackerDatabase.java` (schema, accounts, sessions, positions)
+and `data/Database.java` (single accessor). Schema:
+
+```sql
+Users     (email PK, name, department, phone, role, passwordSalt, passwordHash, createdAt)
+Locations (email PK, latitude, longitude, address, updatedAt)
+Session   (id=1, email)
+```
+
+Passwords are salted 10,000-round iterated SHA-256 with constant-time comparison;
+`PasswordHashingTest` covers determinism, salt sensitivity, hex round-trip,
+comparison and e-mail normalisation.
+
+APK shrank from 9.6 MB to 5.4 MB. No network permission is required for app
+logic (Play services may still use it for geocoding).
+
+**Trade-off:** the data is per device — an admin sees only the accounts created on
+that same phone. For multi-device tracking the storage layer is isolated in two
+files, so Supabase/REST/Firebase can be swapped in without touching the UI.
