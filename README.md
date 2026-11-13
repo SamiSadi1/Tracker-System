@@ -156,8 +156,24 @@ schema change, or users lose their accounts.
 Android 12+ requires). `INTERNET` is no longer needed by the app logic; it is
 still declared only because Google Play services may use it for the geocoder.
 
-Tracking runs while the tracking screen is open (`onStart` → `onStop`).
-True background tracking needs a foreground service — not implemented.
+### Background tracking
+
+Tracking runs in a **foreground service** and keeps going with the screen off and
+the app swiped away — until you stop it. Three ways to stop:
+
+1. The **Stop** action on the persistent notification.
+2. **Stop tracking** on the Location screen.
+3. Turning off **Track in the background** on the employee home.
+
+Android shows a permanent notification while it runs; that is mandatory for
+background location and is also how you can always tell it is on. The
+notification shows the live position and opens the app when tapped.
+
+If the system kills the app for memory, the service restarts itself
+(`START_STICKY`) and resumes until you stop it.
+
+**Battery:** GPS requests a fix every 4 seconds while running. That is normal for
+continuous tracking; stop it when you do not need it.
 
 ## 5. Why this instead of Firebase
 
