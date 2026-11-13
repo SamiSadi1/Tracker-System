@@ -23,6 +23,22 @@ It is a debug build (debug signing key): fine for testing and sharing, not for
 the Play Store. Build locally instead with Android Studio (JDK 17) or
 `./gradlew assembleDebug` → `app/build/outputs/apk/debug/app-debug.apk`.
 
+## 1b. Updating the app later
+
+The app can update itself: **Login screen → Check for updates**.
+
+- It reads the `debug-latest` release, compares the published `versionCode`
+  with the installed one, downloads the newer APK and opens the installer.
+- Android shows its own **Install / Cancel** dialog — a confirmation tap is
+  mandatory. Silent updates are only possible for Play Store apps (or with
+  root / device-owner privileges), by design.
+- The first time, Android asks you to allow *Installing unknown apps* for
+  Tracker System; the updater opens that exact settings screen for you.
+- Nothing is checked automatically, so the app still works fully offline.
+- Every CI build gets a unique, always-increasing `versionCode`
+  (`VERSION_CODE = GitHub run number`), which is what makes the update install
+  over the previous version instead of being rejected.
+
 ## 2. Install and use
 
 1. Install the APK and open the app → the **Login** screen.
