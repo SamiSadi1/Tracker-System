@@ -10,9 +10,11 @@ import android.os.Bundle;
 import android.view.View;
 import android.widget.Button;
 import android.widget.EditText;
+import android.widget.TextView;
 import android.widget.Toast;
 
 import com.example.trackingapplication.data.TrackerDatabase;
+import com.example.trackingapplication.update.ApkUpdater;
 
 /** Sign-in screen. Backed by the on-device database (no Firebase). */
 public class LoginActivity extends AppCompatActivity {
@@ -32,6 +34,18 @@ public class LoginActivity extends AppCompatActivity {
         password = findViewById(R.id.loginPassword);
         loginBtn = findViewById(R.id.loginBtn);
         gotoRegister = findViewById(R.id.gotoRegister);
+
+        TextView versionText = findViewById(R.id.versionText);
+        versionText.setText(getString(R.string.version_label,
+                BuildConfig.VERSION_NAME, BuildConfig.VERSION_CODE));
+
+        Button checkUpdateBtn = findViewById(R.id.checkUpdateBtn);
+        checkUpdateBtn.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                checkForUpdates();
+            }
+        });
 
         loginBtn.setOnClickListener(new View.OnClickListener() {
             @Override
@@ -75,6 +89,40 @@ public class LoginActivity extends AppCompatActivity {
         }
         textField.setError(null);
         return true;
+    }
+
+    /** Checks the published build and installs it when it is newer. */
+    private void checkForUpdates() {
+        new ApkUpdater(this).checkForUpdate(new ApkUpdater.Listener() {
+            @Override
+            public void onChecking() {
+                Toast.makeText(LoginActivity.this,
+                        "Checking for updates…", Toast.LENGTH_SHORT).show();
+            }
+
+            @Override
+            public void onUpToDate() {
+                Toast.makeText(LoginActivity.this,
+                        "You already have the latest version.", Toast.LENGTH_SHORT).show();
+            }
+
+            @Override
+            public void onDownloading() {
+                Toast.makeText(LoginActivity.this,
+                        "Downloading the new version…", Toast.LENGTH_SHORT).show();
+            }
+
+            @Override
+            public void onInstallerLaunched() {
+                Toast.makeText(LoginActivity.this,
+                        "Tap Install to finish the update.", Toast.LENGTH_LONG).show();
+            }
+
+            @Override
+            public void onError(String message) {
+                Toast.makeText(LoginActivity.this, message, Toast.LENGTH_LONG).show();
+            }
+        });
     }
 
     public void createaccount(View view) {

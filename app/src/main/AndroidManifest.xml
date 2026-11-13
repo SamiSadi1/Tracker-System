@@ -4,6 +4,10 @@
     <!-- Needed for Firebase Auth / Firestore network calls -->
     <uses-permission android:name="android.permission.INTERNET" />
 
+    <!-- Self-update: lets the app hand a downloaded APK to the system installer.
+         Android still shows its own confirmation dialog; nothing installs silently. -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+
     <!-- Android 12+ (targetSdk 31+) requires BOTH permissions to be requested together -->
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
@@ -37,6 +41,17 @@
         <activity
             android:name=".LocationActivity"
             android:exported="false" />
+
+        <!-- Shares the downloaded APK with the installer (required since Android 7) -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.updates"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/update_paths" />
+        </provider>
     </application>
 
 </manifest>

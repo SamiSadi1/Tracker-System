@@ -51,6 +51,11 @@ jobs:
         run: chmod +x ./gradlew
 
       - name: Build debug APK
+        env:
+          # A never-repeating, always-increasing versionCode, so the package
+          # installer accepts each new build as an update of the previous one.
+          VERSION_CODE: ${{ github.run_number }}
+          VERSION_NAME: "1.${{ github.run_number }}"
         run: ./gradlew --no-daemon --stacktrace assembleDebug
 
       - name: Run unit tests
@@ -87,9 +92,11 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_REPO: ${{ github.repository }}
+          GITHUB_RUN_NUMBER: ${{ github.run_number }}
         run: |
           set -e
           NOTES="Direct APK download — tap TrackerSystem-debug.apk below.
+          versionCode: ${GITHUB_RUN_NUMBER} (used by the in-app updater)
 
           Install: tap the APK, allow 'Install unknown apps' for your browser/files app
           when Android asks, then open Tracker System.
@@ -106,5 +113,9 @@ jobs:
               --target "$GITHUB_SHA" \
               --latest
           fi
+
+          # Expose the versionCode in the release NAME too, because the in-app
+          # updater parses "versionCode: N" from the API payload (name + body).
+          gh release edit debug-latest --title "Tracker System — build ${GITHUB_RUN_NUMBER}"
 
           gh release upload debug-latest apk/TrackerSystem-debug.apk --clobber

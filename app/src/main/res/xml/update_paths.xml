@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<paths>
+    <!-- Downloaded update APKs live here; FileProvider shares them with the installer. -->
+    <cache-path
+        name="updates"
+        path="updates/" />
+</paths>
