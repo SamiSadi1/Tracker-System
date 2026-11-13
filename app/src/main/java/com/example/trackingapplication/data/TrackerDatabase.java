@@ -405,6 +405,29 @@ public class TrackerDatabase extends SQLiteOpenHelper {
         }
     }
 
+    /** Inserts a message with a known timestamp (used when caching cloud history). */
+    public long insertMessage(String sender, String recipient, String body,
+                              long sentAt, Long readAt) {
+        ContentValues values = new ContentValues();
+        values.put("sender", normalizeEmail(sender));
+        values.put("recipient", normalizeEmail(recipient));
+        values.put("body", body == null ? "" : body);
+        values.put("sentAt", sentAt);
+        if (readAt != null) {
+            values.put("readAt", readAt);
+        }
+        return getWritableDatabase().insert("Messages", null, values);
+    }
+
+    /** Removes both directions of a conversation (used before re-caching from cloud). */
+    public void clearConversation(String a, String b) {
+        String low = threadKeyLow(a, b);
+        String high = threadKeyHigh(a, b);
+        getWritableDatabase().delete("Messages",
+                "(sender = ? AND recipient = ?) OR (sender = ? AND recipient = ?)",
+                new String[]{low, high, high, low});
+    }
+
     /** Stores a message and returns its id. */
     public long sendMessage(String sender, String recipient, String body) {
         ContentValues values = new ContentValues();

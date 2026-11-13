@@ -27,6 +27,7 @@ import androidx.core.content.ContextCompat;
 import com.example.trackingapplication.LocationActivity;
 import com.example.trackingapplication.R;
 import com.example.trackingapplication.data.Database;
+import com.example.trackingapplication.data.Sync;
 import com.example.trackingapplication.data.TrackerDatabase;
 import com.google.android.gms.location.FusedLocationProviderClient;
 import com.google.android.gms.location.LocationCallback;
@@ -191,7 +192,10 @@ public class TrackingService extends Service {
             @Override
             public void run() {
                 String address = resolveAddress(lat, lng);
-                db.saveLocation(user.email, lat, lng, address);
+                // Saves locally and, when Supabase is configured, publishes so other
+                // phones (the admin) see this position in near real time.
+                Sync.publishLocation(TrackingService.this, user.email, user.name,
+                        lat, lng, address);
 
                 String summary = address.isEmpty()
                         ? lastPositionText

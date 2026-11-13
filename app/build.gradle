@@ -7,6 +7,20 @@ plugins {
 def buildVersionCode = (System.getenv("VERSION_CODE") ?: "1").toInteger()
 def buildVersionName = System.getenv("VERSION_NAME") ?: "1.0"
 
+// Supabase project config. Put these in local.properties (never commit the key):
+//   SUPABASE_URL=https://xxxx.supabase.co
+//   SUPABASE_ANON_KEY=eyJhbGciOi...
+// Environment variables of the same name work too (used by CI).
+def supabaseProperties = new Properties()
+def supabasePropertiesFile = rootProject.file('local.properties')
+if (supabasePropertiesFile.exists()) {
+    supabasePropertiesFile.withInputStream { supabaseProperties.load(it) }
+}
+def supabaseUrl = System.getenv("SUPABASE_URL")
+        ?: supabaseProperties.getProperty("SUPABASE_URL", "")
+def supabaseAnonKey = System.getenv("SUPABASE_ANON_KEY")
+        ?: supabaseProperties.getProperty("SUPABASE_ANON_KEY", "")
+
 android {
     namespace 'com.example.trackingapplication'
     compileSdk 34
@@ -21,6 +35,10 @@ android {
         versionName buildVersionName
 
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+
+        // Empty values are fine: the app then stays in offline (SQLite) mode.
+        buildConfigField "String", "SUPABASE_URL", "\"${supabaseUrl}\""
+        buildConfigField "String", "SUPABASE_ANON_KEY", "\"${supabaseAnonKey}\""
     }
 
     buildTypes {
@@ -48,6 +66,9 @@ dependencies {
     implementation 'androidx.constraintlayout:constraintlayout:2.1.4'
     implementation 'androidx.cardview:cardview:1.0.0'
     implementation 'androidx.recyclerview:recyclerview:1.3.2'
+
+    // Cloud sync (messaging + live location across devices)
+    implementation 'org.json:json:20240303'
 
     // Auto-update (download + install a new APK)
     implementation 'androidx.core:core:1.13.1'

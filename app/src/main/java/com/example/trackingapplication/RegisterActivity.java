@@ -11,6 +11,7 @@ import android.widget.CompoundButton;
 import android.widget.EditText;
 import android.widget.Toast;
 
+import com.example.trackingapplication.data.Sync;
 import com.example.trackingapplication.data.TrackerDatabase;
 
 /** Registration screen. Backed by the on-device database (no Firebase). */
@@ -75,27 +76,35 @@ public class RegisterActivity extends AppCompatActivity {
                         ? TrackerDatabase.ROLE_ADMIN
                         : TrackerDatabase.ROLE_EMPLOYEE;
 
-                try {
-                    TrackerDatabase.User user = db.register(
-                            fullName.getText().toString(),
-                            email.getText().toString(),
-                            password.getText().toString(),
-                            department.getText().toString(),
-                            phone.getText().toString(),
-                            role);
+                registerBtn.setEnabled(false);
+                Sync.authenticate(RegisterActivity.this,
+                        email.getText().toString(),
+                        password.getText().toString(),
+                        fullName.getText().toString(),
+                        department.getText().toString(),
+                        phone.getText().toString(),
+                        isAdmin.isChecked() ? TrackerDatabase.ROLE_ADMIN : TrackerDatabase.ROLE_EMPLOYEE,
+                        true,
+                        new Sync.Callback<TrackerDatabase.User>() {
+                            @Override
+                            public void onSuccess(TrackerDatabase.User user) {
+                                registerBtn.setEnabled(true);
+                                Toast.makeText(RegisterActivity.this,
+                                        "Account created successfully", Toast.LENGTH_SHORT).show();
+                                Class<?> home = user.isAdmin()
+                                        ? AdminActivity.class : MainActivity.class;
+                                startActivity(new Intent(getApplicationContext(), home));
+                                finish();
+                            }
 
-                    Toast.makeText(RegisterActivity.this,
-                            "Account created successfully", Toast.LENGTH_SHORT).show();
-
-                    Class<?> home = user.isAdmin() ? AdminActivity.class : MainActivity.class;
-                    startActivity(new Intent(getApplicationContext(), home));
-                    finish();
-
-                } catch (TrackerDatabase.RegistrationException e) {
-                    email.setError(e.getMessage());
-                    Toast.makeText(RegisterActivity.this,
-                            e.getMessage(), Toast.LENGTH_LONG).show();
-                }
+                            @Override
+                            public void onError(String message) {
+                                registerBtn.setEnabled(true);
+                                email.setError(message);
+                                Toast.makeText(RegisterActivity.this,
+                                        message, Toast.LENGTH_LONG).show();
+                            }
+                        });
             }
         });
 

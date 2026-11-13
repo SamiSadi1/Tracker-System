@@ -11,6 +11,7 @@ import android.view.View;
 import android.widget.Button;
 
 import com.example.trackingapplication.data.Database;
+import com.example.trackingapplication.data.Sync;
 import com.example.trackingapplication.data.TrackerDatabase;
 
 import java.util.ArrayList;
@@ -32,27 +33,32 @@ public class NewMessageActivity extends AppCompatActivity {
             return;
         }
 
-        List<TrackerDatabase.User> contacts = new ArrayList<>();
-        for (TrackerDatabase.User user : db.allUsers()) {
-            if (!user.email.equalsIgnoreCase(me.email)) {
-                contacts.add(user);
-            }
-        }
+        final RecyclerView recyclerView = findViewById(R.id.contactList);
+        recyclerView.setLayoutManager(new LinearLayoutManager(this));
 
-        ContactAdapter adapter = new ContactAdapter(contacts,
-                new ContactAdapter.OnContactClick() {
+        Sync.loadContacts(this, me.email,
+                new Sync.Callback<List<TrackerDatabase.User>>() {
                     @Override
-                    public void onClick(TrackerDatabase.User user) {
-                        Intent intent = new Intent(getApplicationContext(), ChatActivity.class);
-                        intent.putExtra(ChatActivity.EXTRA_PARTNER, user.email);
-                        startActivity(intent);
-                        finish();
+                    public void onSuccess(List<TrackerDatabase.User> contacts) {
+                        recyclerView.setAdapter(new ContactAdapter(contacts,
+                                new ContactAdapter.OnContactClick() {
+                                    @Override
+                                    public void onClick(TrackerDatabase.User user) {
+                                        Intent intent = new Intent(getApplicationContext(),
+                                                ChatActivity.class);
+                                        intent.putExtra(ChatActivity.EXTRA_PARTNER, user.email);
+                                        startActivity(intent);
+                                        finish();
+                                    }
+                                }));
+                    }
+
+                    @Override
+                    public void onError(String message) {
+                        android.widget.Toast.makeText(NewMessageActivity.this,
+                                message, android.widget.Toast.LENGTH_LONG).show();
                     }
                 });
-
-        RecyclerView recyclerView = findViewById(R.id.contactList);
-        recyclerView.setLayoutManager(new LinearLayoutManager(this));
-        recyclerView.setAdapter(adapter);
 
         Button back = findViewById(R.id.backBtn);
         back.setOnClickListener(new View.OnClickListener() {

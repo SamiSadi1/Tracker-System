@@ -13,6 +13,7 @@ import android.widget.EditText;
 import android.widget.TextView;
 import android.widget.Toast;
 
+import com.example.trackingapplication.data.Sync;
 import com.example.trackingapplication.data.TrackerDatabase;
 import com.example.trackingapplication.update.ApkUpdater;
 
@@ -35,6 +36,11 @@ public class LoginActivity extends AppCompatActivity {
         loginBtn = findViewById(R.id.loginBtn);
         gotoRegister = findViewById(R.id.gotoRegister);
 
+        TextView modeText = findViewById(R.id.modeText);
+        modeText.setText(Sync.isCloudEnabled()
+                ? "Cloud mode: messages and locations sync between phones"
+                : "Offline mode: data stays on this device (add Supabase keys to sync)");
+
         TextView versionText = findViewById(R.id.versionText);
         versionText.setText(getString(R.string.version_label,
                 BuildConfig.VERSION_NAME, BuildConfig.VERSION_CODE));
@@ -53,15 +59,28 @@ public class LoginActivity extends AppCompatActivity {
                 if (!checkField(email) || !checkField(password)) {
                     return;
                 }
-                try {
-                    TrackerDatabase.User user =
-                            db.login(email.getText().toString(), password.getText().toString());
-                    Toast.makeText(LoginActivity.this,
-                            "Login successful", Toast.LENGTH_SHORT).show();
-                    openHomeFor(user);
-                } catch (TrackerDatabase.LoginException e) {
-                    Toast.makeText(LoginActivity.this, e.getMessage(), Toast.LENGTH_LONG).show();
-                }
+                loginBtn.setEnabled(false);
+                Sync.authenticate(LoginActivity.this,
+                        email.getText().toString(),
+                        password.getText().toString(),
+                        null, null, null, null,
+                        false,
+                        new Sync.Callback<TrackerDatabase.User>() {
+                            @Override
+                            public void onSuccess(TrackerDatabase.User user) {
+                                loginBtn.setEnabled(true);
+                                Toast.makeText(LoginActivity.this,
+                                        "Login successful", Toast.LENGTH_SHORT).show();
+                                openHomeFor(user);
+                            }
+
+                            @Override
+                            public void onError(String message) {
+                                loginBtn.setEnabled(true);
+                                Toast.makeText(LoginActivity.this,
+                                        message, Toast.LENGTH_LONG).show();
+                            }
+                        });
             }
         });
     }
