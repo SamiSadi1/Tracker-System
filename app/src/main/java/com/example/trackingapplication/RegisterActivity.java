@@ -1,6 +1,5 @@
 package com.example.trackingapplication;
 
-import androidx.annotation.NonNull;
 import androidx.appcompat.app.AppCompatActivity;
 
 import android.content.Intent;
@@ -12,35 +11,23 @@ import android.widget.CompoundButton;
 import android.widget.EditText;
 import android.widget.Toast;
 
-import com.google.android.gms.tasks.OnFailureListener;
-import com.google.android.gms.tasks.OnSuccessListener;
-import com.google.firebase.Timestamp;
-import com.google.firebase.auth.AuthResult;
-import com.google.firebase.auth.FirebaseAuth;
-import com.google.firebase.auth.FirebaseUser;
-import com.google.firebase.firestore.DocumentReference;
-import com.google.firebase.firestore.FirebaseFirestore;
+import com.example.trackingapplication.data.Sync;
+import com.example.trackingapplication.data.TrackerDatabase;
 
-import java.util.Date;
-import java.util.HashMap;
-import java.util.Map;
-
+/** Registration screen. Backed by the on-device database (no Firebase). */
 public class RegisterActivity extends AppCompatActivity {
 
-    EditText fullName,email,password,phone,department;
-    Button registerBtn,goToLogin;
-    boolean valid = true;
-    FirebaseAuth fAuth;
-    FirebaseFirestore fstore;
-    CheckBox isAdmin,isUser;
+    EditText fullName, email, password, phone, department;
+    Button registerBtn, goToLogin;
+    CheckBox isAdmin, isUser;
+    TrackerDatabase db;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_register);
 
-        fAuth = FirebaseAuth.getInstance();
-        fstore = FirebaseFirestore.getInstance();
+        db = com.example.trackingapplication.data.Database.get(this);
 
         fullName = findViewById(R.id.registerName);
         email = findViewById(R.id.registerEmail);
@@ -55,8 +42,7 @@ public class RegisterActivity extends AppCompatActivity {
         isUser.setOnCheckedChangeListener(new CompoundButton.OnCheckedChangeListener() {
             @Override
             public void onCheckedChanged(CompoundButton buttonView, boolean isChecked) {
-                if (buttonView.isChecked()){
-
+                if (buttonView.isChecked()) {
                     isAdmin.setChecked(false);
                 }
             }
@@ -65,8 +51,7 @@ public class RegisterActivity extends AppCompatActivity {
         isAdmin.setOnCheckedChangeListener(new CompoundButton.OnCheckedChangeListener() {
             @Override
             public void onCheckedChanged(CompoundButton buttonView, boolean isChecked) {
-                if (buttonView.isChecked()){
-
+                if (buttonView.isChecked()) {
                     isUser.setChecked(false);
                 }
             }
@@ -75,92 +60,70 @@ public class RegisterActivity extends AppCompatActivity {
         registerBtn.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
-                checkField(fullName);
-                checkField(email);
-                checkField(password);
-                checkField(phone);
-
-                if (!(isAdmin.isChecked() || isUser.isChecked())){
-
-                    Toast.makeText(RegisterActivity.this, "Select your Account type", Toast.LENGTH_SHORT).show();
+                if (!(isAdmin.isChecked() || isUser.isChecked())) {
+                    Toast.makeText(RegisterActivity.this,
+                            "Select your Account type", Toast.LENGTH_SHORT).show();
                     return;
                 }
 
-                if (valid){
-
-                    fAuth.createUserWithEmailAndPassword(email.getText().toString(),password.getText().toString()).addOnSuccessListener(new OnSuccessListener<AuthResult>() {
-                        @Override
-                        public void onSuccess(AuthResult authResult) {
-
-
-                            FirebaseUser user = fAuth.getCurrentUser();
-                            Toast.makeText(RegisterActivity.this, "Account Create Successfully", Toast.LENGTH_SHORT).show();
-                            DocumentReference df = fstore.collection("Users").document(user.getEmail());
-                            Map<String,Object> userinfo = new HashMap<>();
-                            userinfo.put("Name",fullName.getText().toString());
-                            userinfo.put("E-mail",email.getText().toString());
-                            userinfo.put("Department",department.getText().toString());
-                            userinfo.put("ContactNo",phone.getText().toString());
-
-
-                            if (isAdmin.isChecked()){
-
-                                userinfo.put("isAdmin","1");
-                            }
-
-                            if (isUser.isChecked()){
-
-                                userinfo.put("isUser","1");
-                            }
-                            userinfo.put("Created",new Timestamp(new Date()));
-
-                            df.set(userinfo);
-
-                            if (isAdmin.isChecked()){
-
-                                startActivity(new Intent(getApplicationContext(),AdminActivity.class));
-                                finish();
-                            }
-
-                            if (isUser.isChecked()){
-
-                                startActivity(new Intent(getApplicationContext(),LoginActivity.class));
-                                finish();
-                            }
-
-
-                        }
-                    }).addOnFailureListener(new OnFailureListener() {
-                        @Override
-                        public void onFailure(@NonNull Exception e) {
-                            Toast.makeText(RegisterActivity.this, "Account Create unsuccessfully"+e.getMessage(), Toast.LENGTH_SHORT).show();
-                        }
-                    });
-
-
+                boolean fieldsValid = checkField(fullName) & checkField(email)
+                        & checkField(password) & checkField(phone) & checkField(department);
+                if (!fieldsValid) {
+                    return;
                 }
+
+                String role = isAdmin.isChecked()
+                        ? TrackerDatabase.ROLE_ADMIN
+                        : TrackerDatabase.ROLE_EMPLOYEE;
+
+                registerBtn.setEnabled(false);
+                Sync.authenticate(RegisterActivity.this,
+                        email.getText().toString(),
+                        password.getText().toString(),
+                        fullName.getText().toString(),
+                        department.getText().toString(),
+                        phone.getText().toString(),
+                        isAdmin.isChecked() ? TrackerDatabase.ROLE_ADMIN : TrackerDatabase.ROLE_EMPLOYEE,
+                        true,
+                        new Sync.Callback<TrackerDatabase.User>() {
+                            @Override
+                            public void onSuccess(TrackerDatabase.User user) {
+                                registerBtn.setEnabled(true);
+                                Toast.makeText(RegisterActivity.this,
+                                        "Account created successfully", Toast.LENGTH_SHORT).show();
+                                Class<?> home = user.isAdmin()
+                                        ? AdminActivity.class : MainActivity.class;
+                                startActivity(new Intent(getApplicationContext(), home));
+                                finish();
+                            }
+
+                            @Override
+                            public void onError(String message) {
+                                registerBtn.setEnabled(true);
+                                email.setError(message);
+                                Toast.makeText(RegisterActivity.this,
+                                        message, Toast.LENGTH_LONG).show();
+                            }
+                        });
             }
         });
 
         goToLogin.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
-
-                startActivity(new Intent(getApplicationContext(),LoginActivity.class));
+                startActivity(new Intent(getApplicationContext(), LoginActivity.class));
                 finish();
             }
         });
     }
-    public boolean checkField(EditText textField){
-        if(textField.getText().toString().isEmpty()){
+
+    /** Validates one field; every field is checked, nothing is overwritten. */
+    public boolean checkField(EditText textField) {
+        if (textField.getText().toString().trim().isEmpty()) {
             textField.setError("Error");
-            valid = false;
-        }else {
-            valid = true;
+            return false;
         }
-
-        return valid;
-
-
+        textField.setError(null);
+        return true;
     }
 }
