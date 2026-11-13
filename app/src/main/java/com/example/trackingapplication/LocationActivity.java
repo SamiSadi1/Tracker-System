@@ -142,7 +142,9 @@ public class LocationActivity extends AppCompatActivity {
     }
 
     private void stopLocationUpdates() {
-        fusedLocationProviderClient.removeLocationUpdates(locationCallback);
+        if (fusedLocationProviderClient != null) {
+            fusedLocationProviderClient.removeLocationUpdates(locationCallback);
+        }
     }
 
     private void getLastLocation() {
@@ -150,6 +152,9 @@ public class LocationActivity extends AppCompatActivity {
 
         fAuth = FirebaseAuth.getInstance();
         fstore = FirebaseFirestore.getInstance();
+        if (fAuth.getCurrentUser() == null) {
+            return;
+        }
         userId = fAuth.getCurrentUser().getEmail();
 
         DocumentReference documentReference = fstore.collection("Users").document(userId);
@@ -157,8 +162,10 @@ public class LocationActivity extends AppCompatActivity {
             @Override
             public void onEvent(@Nullable DocumentSnapshot value, @Nullable FirebaseFirestoreException error) {
 
-                email = value.getString("E-mail");
-                name = value.getString("Name");
+                if (value != null && value.exists()) {
+                    email = value.getString("E-mail");
+                    name = value.getString("Name");
+                }
             }
         });
         if (ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED && ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
@@ -233,9 +240,10 @@ public class LocationActivity extends AppCompatActivity {
 
         try{
 
+            @SuppressWarnings("deprecation")
             List<Address> addresses = geocoder.getFromLocation(latitude,longitude,1);
 
-            if(address!=null){
+            if(addresses != null && !addresses.isEmpty()){
 
                 Address returnAddress = addresses.get(0);
                 StringBuilder stringBuilderReturnAddress =  new StringBuilder("");

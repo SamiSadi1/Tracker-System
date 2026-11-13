@@ -75,10 +75,10 @@ public class RegisterActivity extends AppCompatActivity {
         registerBtn.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
-                checkField(fullName);
-                checkField(email);
-                checkField(password);
-                checkField(phone);
+                // Validate every field. checkField() used to overwrite the shared `valid`
+                // flag on each call, so one non-empty field made the whole form pass.
+                boolean fieldsValid = checkField(fullName) & checkField(email)
+                        & checkField(password) & checkField(phone) & checkField(department);
 
                 if (!(isAdmin.isChecked() || isUser.isChecked())){
 
@@ -86,7 +86,7 @@ public class RegisterActivity extends AppCompatActivity {
                     return;
                 }
 
-                if (valid){
+                if (fieldsValid){
 
                     fAuth.createUserWithEmailAndPassword(email.getText().toString(),password.getText().toString()).addOnSuccessListener(new OnSuccessListener<AuthResult>() {
                         @Override
@@ -95,7 +95,8 @@ public class RegisterActivity extends AppCompatActivity {
 
                             FirebaseUser user = fAuth.getCurrentUser();
                             Toast.makeText(RegisterActivity.this, "Account Create Successfully", Toast.LENGTH_SHORT).show();
-                            DocumentReference df = fstore.collection("Users").document(user.getEmail());
+                            final String profileKey = user.getEmail() != null ? user.getEmail() : user.getUid();
+                            DocumentReference df = fstore.collection("Users").document(profileKey);
                             Map<String,Object> userinfo = new HashMap<>();
                             userinfo.put("Name",fullName.getText().toString());
                             userinfo.put("E-mail",email.getText().toString());
@@ -152,15 +153,12 @@ public class RegisterActivity extends AppCompatActivity {
         });
     }
     public boolean checkField(EditText textField){
-        if(textField.getText().toString().isEmpty()){
+        if(textField.getText().toString().trim().isEmpty()){
             textField.setError("Error");
             valid = false;
-        }else {
-            valid = true;
+            return false;
         }
-
-        return valid;
-
-
+        textField.setError(null);
+        return true;
     }
 }

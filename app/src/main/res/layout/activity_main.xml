@@ -4,17 +4,20 @@
     xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:padding="16dp"
     tools:context=".MainActivity">
 
+    <TextView
+        android:id="@+id/Location"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:background="?attr/selectableItemBackground"
+        android:gravity="center_vertical"
+        android:minHeight="48dp"
+        android:paddingStart="8dp"
+        android:paddingEnd="8dp"
+        android:text="@string/location"
+        android:textSize="20sp" />
 
-   <TextView
-       android:layout_width="match_parent"
-       android:layout_height="match_parent"
-       android:id="@+id/Location"
-       android:text="Location"
-       android:textSize="20sp"
-       android:layout_marginLeft="15dp"
-       android:layout_marginTop="15dp"
-       android:onClick="location"
-        />
 </androidx.appcompat.widget.LinearLayoutCompat>

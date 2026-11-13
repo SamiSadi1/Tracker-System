@@ -117,7 +117,10 @@ public class LoginActivity extends AppCompatActivity {
 
         if(FirebaseAuth.getInstance().getCurrentUser() != null){
 
-            DocumentReference df = FirebaseFirestore.getInstance().collection("Users").document(FirebaseAuth.getInstance().getCurrentUser().getUid());
+            // NOTE: RegisterActivity stores the profile under the user's e-mail
+            // (see RegisterActivity -> df = fstore.collection("Users").document(user.getEmail())),
+            // so the same key must be used here, otherwise signed-in users are never routed.
+            DocumentReference df = FirebaseFirestore.getInstance().collection("Users").document(FirebaseAuth.getInstance().getCurrentUser().getEmail());
             df.get().addOnSuccessListener(new OnSuccessListener<DocumentSnapshot>() {
                 @Override
                 public void onSuccess(DocumentSnapshot documentSnapshot) {
@@ -134,7 +137,10 @@ public class LoginActivity extends AppCompatActivity {
                         finish();
                     }
 
-
+                    if(documentSnapshot.getString("isAdmin") == null && documentSnapshot.getString("isUser") == null){
+                        // Signed in but no role stored (e.g. half-created profile) -> start clean.
+                        FirebaseAuth.getInstance().signOut();
+                    }
 
                 }
             }).addOnFailureListener(new OnFailureListener() {
