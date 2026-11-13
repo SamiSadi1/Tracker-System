@@ -4,13 +4,24 @@
 > SQLite database, so it works the moment you install the APK: no Firebase
 > project, no `google-services.json`, no API keys, no console steps, no network.
 
-## 1. Build
+## 1. Install the APK on your phone
 
-The APK is built by CI on every push (`.github/workflows/android.yml`).
-Download it from **GitHub → Actions → latest green run → Artifacts → app-debug**,
-or build locally with Android Studio (JDK 17) / `./gradlew assembleDebug`.
+**Direct download (no login needed):**
 
-Result: `app/build/outputs/apk/debug/app-debug.apk`
+```
+https://github.com/SamiSadi1/Tracker-System/releases/download/debug-latest/TrackerSystem-debug.apk
+```
+
+Or open **Releases** → `debug-latest` → `TrackerSystem-debug.apk`, or scan the QR
+code on the release page. Every push rebuilds and re-uploads that same file.
+
+On the phone: tap the downloaded file → Android may ask to allow
+*Install unknown apps* for your browser/files app → allow → **Install** → open
+**Tracker System**.
+
+It is a debug build (debug signing key): fine for testing and sharing, not for
+the Play Store. Build locally instead with Android Studio (JDK 17) or
+`./gradlew assembleDebug` → `app/build/outputs/apk/debug/app-debug.apk`.
 
 ## 2. Install and use
 
